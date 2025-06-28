@@ -5,13 +5,18 @@ block_cipher = None
 
 from PyInstaller.utils.hooks import collect_submodules
 
-hiddenimports = collect_submodules('app')
 
-script_path = 'media-organizer/app/main.py'
-exiftool_path = 'media-organizer/ExifTool/exiftool.exe'
+# Add exiftool-wrapper Python package to hiddenimports
+hiddenimports = collect_submodules('app') + ['exiftool_wrapper']
+
+import os
+a_project_root = os.path.abspath('.')
+pathex = [a_project_root]
+script_path = 'media_organizer/app/main.py'
+exiftool_path = 'media_organizer/ExifTool/exiftool.exe'
 a = Analysis(
     [script_path],
-    pathex=[],
+    pathex=pathex,
     binaries=[(exiftool_path, '.')],
     datas=[],
     hiddenimports=hiddenimports,
@@ -30,7 +35,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='media-organizer',
+    name='media_organizer',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
