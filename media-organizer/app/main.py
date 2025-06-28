@@ -1,9 +1,9 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext
 import threading
-from .ui_controller import MediaOrganizerController
-from .exiftool_check import check_exiftool
-from .config import IMAGE_FORMATS, VIDEO_FORMATS
+from app.ui_controller import MediaOrganizerController
+from app.exiftool_check import check_exiftool
+from app.config import IMAGE_FORMATS, VIDEO_FORMATS
 import json
 import os
 
@@ -11,16 +11,6 @@ APP_VERSION = "1.0.0"
 
 # --- UI Setup ---
 class MediaOrganizerApp:
-        # Duplicate handling option
-        self.duplicate_mode = tk.StringVar(value='overwrite')
-        dup_frame = tk.Frame(org_frame)
-        dup_frame.grid(row=4, column=2, rowspan=1, sticky='ne', padx=5)
-        tk.Label(dup_frame, text="If file exists:").pack(anchor='w')
-        tk.Radiobutton(dup_frame, text="Overwrite", variable=self.duplicate_mode, value='overwrite').pack(anchor='w')
-        tk.Radiobutton(dup_frame, text="Preserve (append _1, _2, ...)", variable=self.duplicate_mode, value='preserve').pack(anchor='w')
-        # Info label for overwrite
-        self.dup_info_label = tk.Label(dup_frame, text="If a file with the same name exists in the destination, it will be overwritten.", fg='orange', wraplength=180, justify='left')
-        self.dup_info_label.pack(anchor='w', pady=(2,0))
     def __init__(self, root):
         self.root = root
         self.log_callback = self._log_callback
@@ -98,21 +88,19 @@ class MediaOrganizerApp:
         tag_frame.grid(row=4, column=0, columnspan=3, sticky='ew', pady=2)
         tag_frame.grid_columnconfigure(0, weight=1)
         tk.Label(tag_frame, text="Metadata date tag order (top = first):").pack(anchor='w')
-        self.tag_combos = []
+        # Add dropdowns for tag order selection (use grid for visibility and alignment)
         for i, var in enumerate(self.tag_vars):
-            combo = ttk.Combobox(tag_frame, textvariable=var, width=22, values=self.date_tag_options)
-            combo.pack(side='left', padx=2)
-            combo['state'] = 'normal'
-            self.tag_combos.append(combo)
+            tk.Label(tag_frame, text=f"{i+1}.").grid(row=i+1, column=0, sticky='e', padx=(10,2), pady=1)
+            om = tk.OptionMenu(tag_frame, var, *self.date_tag_options)
+            om.grid(row=i+1, column=1, sticky='w', padx=(0,10), pady=1)
 
-        # Duplicate handling option (radio buttons)
+        # Duplicate handling option
         self.duplicate_mode = tk.StringVar(value='overwrite')
         dup_frame = tk.Frame(org_frame)
         dup_frame.grid(row=4, column=2, rowspan=1, sticky='ne', padx=5)
         tk.Label(dup_frame, text="If file exists:").pack(anchor='w')
         tk.Radiobutton(dup_frame, text="Overwrite", variable=self.duplicate_mode, value='overwrite').pack(anchor='w')
         tk.Radiobutton(dup_frame, text="Preserve (append _1, _2, ...)", variable=self.duplicate_mode, value='preserve').pack(anchor='w')
-        # Info label for overwrite
         self.dup_info_label = tk.Label(dup_frame, text="If a file with the same name exists in the destination, it will be overwritten.", fg='orange', wraplength=180, justify='left')
         self.dup_info_label.pack(anchor='w', pady=(2,0))
 

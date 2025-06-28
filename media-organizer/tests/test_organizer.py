@@ -36,7 +36,8 @@ def test_get_organize_preview(tmp_path):
     f2.write_bytes(b'x')
     preview, skipped = get_organize_preview([str(f1), str(f2)], tmp_path)
     assert (str(f1), str(tmp_path / '2022' / '01' / 'a.jpg')) in preview
-    assert any('b.bad' in s for s, _ in skipped)
+    # .bad file should be in preview as no_metadata, not in skipped
+    assert (str(f2), str(tmp_path / 'no_metadata' / 'b.bad') + ' (no metadata)') in preview
 
 def test_organize_files_dry_run(tmp_path):
     f1 = tmp_path / 'a.jpg'

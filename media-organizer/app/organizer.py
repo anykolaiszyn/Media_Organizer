@@ -37,6 +37,18 @@ def organize_files(files, dest_folder, operation='copy', dry_run=False, tag_orde
         ensure_dir(dest_dir)
         dest_path = dest_dir / Path(file_path).name
         dest_path = _get_nonconflicting_path(dest_path, duplicate_mode)
+        try:
+            if dry_run:
+                logger.info(f"[DRY RUN] Would {operation} {file_path} -> {dest_path}")
+                continue
+            if operation == 'move':
+                shutil.move(str(file_path), str(dest_path))
+                logger.info(f"Moved {file_path} -> {dest_path}")
+            else:
+                shutil.copy2(str(file_path), str(dest_path))
+                logger.info(f"Copied {file_path} -> {dest_path}")
+        except Exception as e:
+            logger.error(f"Failed to {operation} {file_path}: {e}")
 
 def _get_nonconflicting_path(dest_path, duplicate_mode):
     """If duplicate_mode is 'preserve', append _1, _2, ... to filename if needed."""
@@ -51,18 +63,6 @@ def _get_nonconflicting_path(dest_path, duplicate_mode):
         dest_path = parent / f"{stem}_{i}{suffix}"
         i += 1
     return dest_path
-        try:
-            if dry_run:
-                logger.info(f"[DRY RUN] Would {operation} {file_path} -> {dest_path}")
-                continue
-            if operation == 'move':
-                shutil.move(str(file_path), str(dest_path))
-                logger.info(f"Moved {file_path} -> {dest_path}")
-            else:
-                shutil.copy2(str(file_path), str(dest_path))
-                logger.info(f"Copied {file_path} -> {dest_path}")
-        except Exception as e:
-            logger.error(f"Failed to {operation} {file_path}: {e}")
 
 def get_organize_preview(files, dest_folder, tag_order=None):
     """

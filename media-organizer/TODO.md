@@ -1,3 +1,30 @@
+# Next Steps & Suggestions
+1. Metadata Date Tag Fallback Logic
+   - Goal: When organizing, use the first available date tag from the user’s prioritized list.
+   - How: In your controller (not UI), implement a function that, given a metadata dict and a list of tag names, returns the first valid date found. This logic should be unit-testable and reusable.
+
+2. Metadata Preview Display Formatting
+   - Goal: Make metadata in the preview tab more readable.
+   - How: Format key-value pairs in a table-like or grouped style, highlight important tags, and possibly add a search/filter box for large metadata sets.
+
+3. Unit Tests for Controller & Metadata Parsing
+   - Goal: Ensure reliability and catch regressions.
+   - How: Add tests in tests/ for:
+     - Date tag fallback logic.
+     - Duplicate handling.
+     - Metadata extraction (mock ExifTool output).
+
+4. Optimize Duplicate Handling Logic
+   - Goal: Make file naming for duplicates robust and efficient.
+   - How: Refactor duplicate handling into a utility function, ensure it’s thread-safe, and add tests for edge cases (e.g., many duplicates).
+
+5. CLI-Only (Headless) Mode
+   - Goal: Allow running the organizer without a GUI for automation or server use.
+   - How: Add a CLI entry point (e.g., cli.py) that accepts arguments for source, dest, operation, tags, etc., and calls the same controller logic as the GUI.
+
+6. Config Persistence (JSON or SQLite)
+   - Goal: Persist user preferences, last folders, and possibly history.
+   - How: Abstract config read/write into a module (e.g., config.py), support both JSON and (optionally) SQLite for more complex state.
 # TODO: Media Organizer App Roadmap
 
 ## MVP User App Requirements Checklist
@@ -17,7 +44,7 @@
 - [x] All core logic separated from UI (testable, reusable)
 - [x] Easy to add new UI or CLI in the future
 - [x] Configurable supported formats in a single place
-- [x] Dockerfile for easy cross-platform use
+// Docker support removed; focus on local and EXE builds
 - [x] README with clear usage instructions
 - [x] (Optional for MVP) Show summary dialog at end (files organized, skipped, errors)
 - [x] (Optional for MVP) Add a cancel button for long operations
