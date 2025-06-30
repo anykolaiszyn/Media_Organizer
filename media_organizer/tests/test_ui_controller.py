@@ -14,16 +14,21 @@ def fake_scan_media_files(source, formats=None):
     return [str(source / 'a.jpg'), str(source / 'b.jpg')]
 
 def fake_get_organize_preview(files, dest, tag_order=None):
-    # Pretend one file is valid, one is skipped
-    if len(files) == 1:
-        return [(files[0], str(Path(dest) / '2022/01/a.jpg'))], []
-    return [(files[0], str(Path(dest) / '2022/01/a.jpg'))], [(files[1], 'No date metadata found')]
+    # Return valid for .jpg, no_metadata for .bad
+    out = []
+    for f in files:
+        fname = Path(f).name
+        if fname.endswith('.jpg'):
+            out.append((f, str(Path(dest) / '2022/01' / fname)))
+        else:
+            out.append((f, str(Path(dest) / 'no_metadata' / fname) + ' (no metadata)'))
+    return out, []
 
 def test_get_preview_list(tmp_path, monkeypatch):
     logger = DummyLogger()
     ctrl = MediaOrganizerController(log_callback=logger)
-    monkeypatch.setattr('app.ui_controller.scan_media_files', fake_scan_media_files)
-    monkeypatch.setattr('app.ui_controller.get_organize_preview', fake_get_organize_preview)
+    monkeypatch.setattr('media_organizer.app.ui_controller.scan_media_files', fake_scan_media_files)
+    monkeypatch.setattr('media_organizer.app.ui_controller.get_organize_preview', fake_get_organize_preview)
     preview, skipped = ctrl.get_preview_list(tmp_path, tmp_path, tag_order=None, formats=['.jpg'])
     assert len(preview) == 2
     assert len(skipped) == 0

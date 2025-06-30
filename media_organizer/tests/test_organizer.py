@@ -7,12 +7,10 @@ import os
 import pytest
 
 def fake_extract_datetime(file_path, tags=None):
-    # Return a fixed date for .jpg, fail for .bad
+    # Return a fixed date for .jpg, None for .bad
     if str(file_path).endswith('.jpg'):
         return '2022:01:02 12:00:00'
-    if str(file_path).endswith('.bad'):
-        return None
-    return '2022:01:02'
+    return None
 
 def fake_parse_exif_date(date_str):
     from datetime import datetime
@@ -26,8 +24,8 @@ def fake_parse_exif_date(date_str):
 
 @pytest.fixture(autouse=True)
 def patch_extract(monkeypatch):
-    monkeypatch.setattr('app.organizer.extract_datetime', fake_extract_datetime)
-    monkeypatch.setattr('app.organizer.parse_exif_date', fake_parse_exif_date)
+    monkeypatch.setattr('media_organizer.app.organizer.extract_datetime', fake_extract_datetime)
+    monkeypatch.setattr('media_organizer.app.organizer.parse_exif_date', fake_parse_exif_date)
 
 def test_get_organize_preview(tmp_path):
     f1 = tmp_path / 'a.jpg'

@@ -4,10 +4,14 @@ from .logger import logger
 from .metadata_extractor import extract_datetime
 from .utils import ensure_dir, parse_exif_date
 
-def organize_files(files, dest_folder, operation='copy', dry_run=False, tag_order=None, duplicate_mode='overwrite'):
+def organize_files(files, dest_folder, operation='copy', dry_run=False, tag_order=None, duplicate_mode='overwrite', use_earliest=False):
     dest_folder = Path(dest_folder)
     for file_path in files:
-        date_str = extract_datetime(file_path, tags=tag_order)
+        if use_earliest:
+            from .metadata_extractor import extract_earliest_datetime
+            date_str = extract_earliest_datetime(file_path, tags=tag_order)
+        else:
+            date_str = extract_datetime(file_path, tags=tag_order)
         if not date_str:
             # Move/copy to no_metadata folder
             no_meta_dir = dest_folder / "no_metadata"

@@ -4,38 +4,183 @@
 
 ## Open Tasks & Suggestions
 
-1. Metadata Date Tag Fallback Logic
+### User Experience & UI
+
+- PRIORITY: Efficient Large Batch Support (Thousands of Files)
+
+  - Stream batch results (metadata, actions, errors) to disk (SQLite) instead of keeping all in memory. **[x]**
+    - Implemented via batch_results_db.py (SQLite), integrated and tested. UI and export use paginated DB fetch. Temp files use appdata/user-writable dirs. All relevant tests pass.
+
+
+  - **(Optional)** Add a "max files in memory" config and warn the user if exceeded.
+
+These changes are required to prevent lockups/crashes when sorting thousands of files and to ensure the app remains responsive and stable for large batches.
+
+[Highest Priority for Scalability]
+
+
+
+**Dark Mode:** Add a dark mode/theme toggle for better accessibility and comfort. [in progress]
+
+
+
+### Functionality
+
+- Configurable Logging: Allow users to set the log level (info, warning, error) and choose whether to save logs to a file.
+- Advanced Duplicate Handling: Offer more duplicate handling strategies (e.g., skip, rename with timestamp, move to a duplicates folder).
+- Batch Resume: If a batch is interrupted, allow resuming from where it left off.
+- File Operation Preview: Enhance the preview mode to show what will happen to each file (move/copy, destination path, action taken).
+
+
+### Performance & Scalability
+
+- Async Scanning: Use asynchronous file scanning to keep the UI responsive when scanning very large folders.
+
+
+### Extensibility & Code Quality
+
+- Plugin Discovery: Add automatic discovery and registration of plugins, with a UI to enable/disable them.
+
+### Platform & Deployment
+
+- Cross-Platform Testing: Ensure all features work smoothly on Linux and macOS, not just Windows.
+- Portable Config: Allow users to specify a custom config file location (e.g., via CLI or environment variable).
+- Installer: Provide an installer or portable ZIP for the EXE version, including all dependencies.
+
+1. Configurable ExifTool Timeout
+
+   - Allow the ExifTool timeout to be set via config or environment variable. Default to 15s, but let advanced users increase for large files.
+
+2. User-Friendly Error Messages for Metadata Extraction
+
+   - Show clear, actionable UI messages for:
+      - ExifTool timeouts (e.g., “Metadata extraction timed out. The file may be corrupt or too large.”)
+        - Suggest retrying, skipping, or increasing the timeout in advanced settings.
+      - Missing ExifTool (e.g., “ExifTool is not installed or not found. Please check your installation.”)
+        - Offer a button to open the ExifTool folder or show installation instructions.
+      - Corrupt or unsupported files (e.g., “Could not extract metadata. The file may be corrupt or unsupported.”)
+        - Suggest trying another file, or checking file integrity.
+
+   - In batch mode, provide options to:
+      - Retry the failed file (with a button or keyboard shortcut)
+      - Skip the file and continue
+      - Ignore all future errors of this type ("Ignore All" checkbox)
+
+   - Log all errors with context (file name, error type, and suggested action) to both the UI log window and a persistent log file.
+
+   - Optionally, display a summary dialog at the end of batch processing listing all files that failed and why, with options to export the error list or retry failed files.
+
+   - TODO: Refactor batch processing logic to track failed files and error types for summary display.
+
+3. Batch Processing Safety
+
+   - [x] Ensure batch jobs do not launch too many ExifTool processes at once. Use a queue or thread pool for safety.
+   - [x] Limit the number of concurrent ExifTool subprocesses (e.g., max 2-4 at a time; make configurable).
+   - [x] Use Python's `concurrent.futures.ThreadPoolExecutor` for safe parallelism.
+   - [x] Show a progress bar or status indicator for queued files.
+   - [x] If the queue is full, delay new jobs and inform the user (UI or log).
+   - [x] Refactor batch processing logic in `ui_controller.py` to use a thread pool for metadata extraction.
+   - [x] Add tests to ensure no more than the allowed number of ExifTool processes run in parallel. (All tests pass)
+
+4. Logging Enhancements
+
+   - Log ExifTool version/path at startup. Log number of files processed and failures at the end of a batch.
+
+5. Cross-Platform ExifTool Support
+
+   - Ensure ExifTool path and headless logic work on Linux/macOS. Use close_fds=True on non-Windows.
+
+6. UI Feedback for Metadata Extraction [x]
+
+   - Show a progress bar or spinner while extracting metadata. Allow user to cancel a long-running extraction.
+
+7. Metadata Date Tag Fallback Logic
+
    - Goal: When organizing, use the first available date tag from the user’s prioritized list.
    - How: In your controller (not UI), implement a function that, given a metadata dict and a list of tag names, returns the first valid date found. This logic should be unit-testable and reusable.
 
-2. Metadata Preview Display Formatting
+8. Metadata Preview Display Formatting [x]
+
    - Goal: Make metadata in the preview tab more readable.
    - How: Format key-value pairs in a table-like or grouped style, highlight important tags, and possibly add a search/filter box for large metadata sets.
 
-3. Unit Tests for Controller & Metadata Parsing
+9. Unit Tests for Controller & Metadata Parsing
+
    - Goal: Ensure reliability and catch regressions.
    - How: Add tests in tests/ for:
      - Date tag fallback logic.
      - Duplicate handling.
      - Metadata extraction (mock ExifTool output).
 
-4. Optimize Duplicate Handling Logic
+10. Optimize Duplicate Handling Logic
+
    - Goal: Make file naming for duplicates robust and efficient.
    - How: Refactor duplicate handling into a utility function, ensure it’s thread-safe, and add tests for edge cases (e.g., many duplicates).
 
-5. CLI-Only (Headless) Mode
+11. CLI-Only (Headless) Mode
+
    - Goal: Allow running the organizer without a GUI for automation or server use.
    - How: Add a CLI entry point (e.g., cli.py) that accepts arguments for source, dest, operation, tags, etc., and calls the same controller logic as the GUI.
 
-6. Config Persistence (JSON or SQLite)
+12. Config Persistence (JSON or SQLite)
+
    - Goal: Persist user preferences, last folders, and possibly history.
    - How: Abstract config read/write into a module (e.g., config.py), support both JSON and (optionally) SQLite for more complex state.
 
-7. Date range selection (only organize files within a certain date range)
 
-8. Keyboard shortcuts for main actions
+
 
 ## Completed Tasks
+
+### User Experience & UI
+
+- Batch Cancel Feedback: When canceling a batch, a clear dialog/log message indicates how many files were processed before cancellation.
+- Error/Warning Export: Users can export the error/warning summary at the end of a batch to a text or CSV file.
+- Drag-and-Drop Support: Drag-and-drop is enabled for selecting source/destination folders or files in the UI.
+- Progress Details: The current file being processed is shown in the progress bar area.
+
+### Functionality
+
+- Date Range UI: Date range picker is implemented in the UI for intuitive filtering.
+
+### Performance & Scalability
+
+- Memory Usage: For very large batches, results are streamed to disk and the UI is paginated to avoid memory issues.
+
+### Extensibility & Code Quality
+
+- Unit Test Coverage: Test coverage includes edge cases, error handling, and plugin integration.
+- Type Annotations: Type hints are present throughout the codebase.
+- Documentation: README and architecture notes are present.
+
+### Platform & Deployment
+
+- Batch Processing Safety: All sub-tasks are implemented (queue/thread pool, concurrency limits, progress bar, etc.).
+- UI Feedback for Metadata Extraction: Progress bar/spinner and cancel are implemented.
+- Optimize Duplicate Handling Logic: Utility function and tests exist.
+- CLI-Only (Headless) Mode: `cli.py` exists and is functional.
+- Config Persistence: `config.py` supports JSON, and the structure is ready for SQLite.
+
+### Async & Scalability
+
+- Async Scanning: Asynchronous file scanning is implemented to keep the UI responsive.
+
+### CLI & Extensibility
+
+- Plugin system skeleton exists (`plugins/` folder, interface).
+
+### Phase 2: UI/UX Improvements
+
+- Show estimated time remaining for large batches.
+- Display error/warning summary dialog at the end.
+- Add a Cancel button to stop processing mid-way.
+- Remember last used folders.
+- Filter by file type.
+- Preview mode: show a list of files that will be moved/copied before starting.
+- Responsive layout (widgets resize with the window).
+- About/help dialog with version info and quick usage tips.
+- Date range selection (only organize files within a certain date range).
+- Keyboard shortcuts for main actions.
 
 ### MVP User App Requirements Checklist
 
@@ -94,8 +239,8 @@
 
 ### Phase 2: UI/UX Improvements
 
-- Show estimated time remaining for large batches
-- Display error/warning summary dialog at the end (e.g., X files organized, Y skipped, Z errors)
+- Show estimated time remaining for large batches [x]
+- Display error/warning summary dialog at the end (e.g., X files organized, Y skipped, Z errors) [x]
 - Add a Cancel button to stop processing mid-way
 - Remember last used folders (persist to config or use askdirectory initialdir)
 - Filter by file type (checkboxes for images/videos)

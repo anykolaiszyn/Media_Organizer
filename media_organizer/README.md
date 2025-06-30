@@ -3,6 +3,7 @@
 A modular Python app with a simple Tkinter UI to organize your photos and videos by creation date or metadata. Supports both local and EXE (standalone) usage.
 
 
+
 ## Features
 
 - Select source and destination folders
@@ -10,11 +11,12 @@ A modular Python app with a simple Tkinter UI to organize your photos and videos
 - Recursively scans for images and videos
 - Uses ExifTool to extract creation date metadata (user-configurable tag order)
 - Organizes files into /YYYY/MM/ subfolders
+- **Batch-safe processing:** Limits the number of concurrent ExifTool processes (configurable, default 4) for robust and safe batch operations. Files are queued and processed efficiently, with user feedback if the queue is full.
+- **Progress bar and ETA:** Real-time progress bar and estimated time remaining are shown for large batches.
+- **Summary dialog:** At the end of each batch, a dialog summarizes how many files were organized, skipped, or had errors, with details available for review.
 - **Preview mode:** See a list of files to be moved/copied before starting
 - **Dry-run:** Simulate organization without making changes
 - **Cancel button:** Stop processing mid-way
-- **Summary dialog:** See organized, skipped, and error files at the end
-- **Progress bar, ETA, and color-coded log window**
 - **File type filter:** Organize images, videos, or both
 - **Remembers last used folders**
 - **Responsive layout:** UI resizes with the window
@@ -108,12 +110,16 @@ The app supports plugins for metadata extraction. To add a new metadata extracto
   ```
 
 
+
 ## Architecture Notes
 
 - Core logic is separated from UI for testability and reuse.
 - All file/path logic uses `pathlib`.
-- Async/parallel file processing for scalability.
+- **ThreadPoolExecutor** is used for safe, parallel batch processing, limiting concurrent ExifTool subprocesses and providing robust queueing.
+- Real-time progress and ETA are calculated and displayed in the UI.
+- All errors and warnings are logged and summarized at the end of each batch, with a summary dialog for user review.
 - Easy to add new UI or CLI frontends.
+- Extensible plugin system for custom metadata extraction.
 
 
 ## Notes

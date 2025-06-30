@@ -23,8 +23,12 @@ def test_extract_metadata_success(monkeypatch):
 
 def test_extract_metadata_error(monkeypatch):
     monkeypatch.setattr('exiftool_wrapper.ExifToolWrapper', lambda *a, **k: DummyExifTool(raise_exc=True))
-    assert extract_metadata('file.jpg') == {}
+    result = extract_metadata('file.jpg')
+    assert isinstance(result, dict)
+    assert result.get('type') == 'corrupt_or_unsupported'
 
 def test_extract_metadata_empty(monkeypatch):
     monkeypatch.setattr('exiftool_wrapper.ExifToolWrapper', lambda *a, **k: DummyExifTool(result={}))
-    assert extract_metadata('file.jpg') == {}
+    result = extract_metadata('file.jpg')
+    assert isinstance(result, dict)
+    assert result.get('type') == 'no_metadata'
