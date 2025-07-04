@@ -758,14 +758,14 @@ if __name__ == "__main__":
         except Exception:
             logger.error(err)
 
-# Handle optional exiftool_wrapper import
+# Handle optional exiftool import
 try:
-    import exiftool_wrapper
+    import exiftool
     from media_organizer.app.exiftool_check import get_exiftool_path
-    # --- ExifTool subprocess monkey-patch for Windows ---
-    exiftool_wrapper.ExifToolWrapper.PROGRAM = get_exiftool_path()
+    # Note: PyExifTool uses a different API than exiftool_wrapper
+    logger.info("ExifTool library available")
 except ImportError:
-    logger.warning("exiftool_wrapper not available - some functionality may be limited")
+    logger.warning("exiftool library not available - some functionality may be limited")
 
 import sys
 import subprocess

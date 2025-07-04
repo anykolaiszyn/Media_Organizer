@@ -74,7 +74,8 @@ class MediaOrganizerController:
         self._log(f"Using up to {max_workers} concurrent workers for batch processing.")
         def organize_one(file_path):
             if self.cancel_flag:
-                self.batch_db.insert_result(file_path, operation, 'cancelled', {}, error='Batch cancelled')
+                if self.batch_db is not None:
+                    self.batch_db.insert_result(file_path, operation, 'cancelled', {}, error='Batch cancelled')
                 return 'cancelled', file_path
             self._log(f"Processing: {file_path}")
             from .metadata_extractor import extract_metadata
@@ -107,7 +108,8 @@ class MediaOrganizerController:
                 import os
                 if os.environ.get('MEDIA_ORGANIZER_DEBUG'):
                     raise
-            self.batch_db.insert_result(file_path, operation, status, metadata, error=error)
+            if self.batch_db is not None:
+                self.batch_db.insert_result(file_path, operation, status, metadata, error=error)
             return status, file_path
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {}
