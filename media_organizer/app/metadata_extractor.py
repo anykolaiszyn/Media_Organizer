@@ -4,6 +4,7 @@ from .logger import log
 import exiftool_wrapper as exiftool
 from media_organizer.app.exiftool_check import get_exiftool_path
 import threading
+import subprocess
 
 # Track all ExifTool processes globally for robust cleanup
 _exiftool_procs = set()
@@ -100,24 +101,23 @@ def extract_datetime_with_tags(tags, file_path):
                 if k.lower().endswith(tag.lower()):
                     log(f"Extracted {k} for {file_path}: {meta[k]}")
                     return meta[k], k
+    except FileNotFoundError as e:
+        log(f"ExifTool executable not found for {file_path}: {e}")
+    except TimeoutError as e:
+        log(f"ExifTool timeout for {file_path}: {e}")
+    except PermissionError as e:
+        log(f"Permission error accessing {file_path}: {e}")
+    except subprocess.CalledProcessError as e:
+        log(f"ExifTool process error for {file_path}: {e}")
     except Exception as e:
-        log(f"ExifTool error for {file_path}: {e}")
+        log(f"Unexpected ExifTool error for {file_path}: {e}")
+        # Log traceback in debug mode
+        import os
+        if os.environ.get('MEDIA_ORGANIZER_DEBUG'):
+            import traceback
+            log(f"Traceback: {traceback.format_exc()}")
     log(f"No valid datetime found for {file_path}")
     return None, None
-
-def extract_datetime(file_path, tags=None):
-    # Default order if not specified
-    if tags is None:
-        tags = [
-            'DateTimeOriginal',
-            'CreateDate',
-            'MediaCreateDate'
-        ]
-    value, _ = extract_datetime_with_tags(tags, file_path)
-    return value
-
-
-def extract_datetime_with_tags(tags, file_path):
     file_path = str(Path(file_path))
     exiftool_path = get_exiftool_path()
     try:
@@ -175,7 +175,20 @@ def extract_earliest_datetime(file_path, tags=None):
             found_dates.sort(key=lambda x: x[0])  # sort by datetime
             log(f"[EARLIEST] {file_path}: {found_dates[0][1]} from {found_dates[0][2]}")
             return found_dates[0][1]  # return the date string
+    except FileNotFoundError as e:
+        log(f"ExifTool executable not found for {file_path} (earliest): {e}")
+    except TimeoutError as e:
+        log(f"ExifTool timeout for {file_path} (earliest): {e}")
+    except PermissionError as e:
+        log(f"Permission error accessing {file_path} (earliest): {e}")
+    except subprocess.CalledProcessError as e:
+        log(f"ExifTool process error for {file_path} (earliest): {e}")
     except Exception as e:
-        log(f"ExifTool error for {file_path} (earliest): {e}")
+        log(f"Unexpected ExifTool error for {file_path} (earliest): {e}")
+        # Log traceback in debug mode
+        import os
+        if os.environ.get('MEDIA_ORGANIZER_DEBUG'):
+            import traceback
+            log(f"Traceback: {traceback.format_exc()}")
     log(f"No valid datetime found for {file_path} (earliest)")
     return None

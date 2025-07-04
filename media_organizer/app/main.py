@@ -1,5 +1,3 @@
-
-
 import os
 from media_organizer.app.exiftool_check import get_exiftool_path
 # Set EXIFTOOL_PATH to the folder, not the exe itself
@@ -11,6 +9,7 @@ import threading
 from media_organizer.app.ui_controller import MediaOrganizerController
 from media_organizer.app.exiftool_check import check_exiftool
 from media_organizer.app.config import IMAGE_FORMATS, VIDEO_FORMATS
+from media_organizer.app.logger import logger
 import json
 
 APP_VERSION = "1.0.0"
@@ -348,7 +347,7 @@ class MediaOrganizerApp:
     def view_metadata(self):
         try:
             if not hasattr(self, 'meta_table'):
-                print('[DEBUG] VIEW_METADATA CLICKED (no meta_table widget)')
+                logger.debug('VIEW_METADATA CLICKED (no meta_table widget)')
                 return
             self.meta_table.delete(*self.meta_table.get_children())
             self.meta_info_label.config(text='')
@@ -400,7 +399,7 @@ class MediaOrganizerApp:
             import traceback
             tb = traceback.format_exc()
             self.meta_info_label.config(text=f'Error: {e}', fg='red')
-            print(f'[DEBUG] view_metadata outer exception: {e}\n{tb}')
+            logger.error(f'view_metadata exception: {e}\n{tb}')
 
     def filter_metadata_table(self):
         # Filter the metadata table based on the search box
@@ -418,8 +417,8 @@ class MediaOrganizerApp:
             self._log_buffer = []
             self._log_flush_scheduled = False
         self._log_buffer.append(msg)
-        # Debug: print to console for troubleshooting
-        print(f"[LOG_CALLBACK] {msg}")
+        # Log to debug for troubleshooting
+        logger.debug(f"Log callback received: {msg}")
         if len(self._log_buffer) >= 20:
             self._flush_log_buffer()
         elif not self._log_flush_scheduled:
@@ -430,8 +429,8 @@ class MediaOrganizerApp:
         if not hasattr(self, '_log_buffer') or not self._log_buffer:
             self._log_flush_scheduled = False
             return
-        # Debug: print flush event
-        print(f"[FLUSH_LOG_BUFFER] Flushing {len(self._log_buffer)} messages")
+        # Log flush event at debug level
+        logger.debug(f"Flushing {len(self._log_buffer)} log buffer messages")
         if hasattr(self, 'log_window') and self.log_window:
             self.log_window.config(state='normal')
             for msg in self._log_buffer:
@@ -574,9 +573,22 @@ class MediaOrganizerApp:
             elif any(word in lower_msg for word in ["failed", "error", "could not", "permission denied", "exception"]):
                 self.summary['errors'] += 1
                 self.error_files.append(msg)
+        # Memory warning callback for large datasets
+        def memory_warning_callback(title, message):
+            """Show memory warning dialog and return user's choice."""
+            return messagebox.askyesno(
+                title,
+                message + "\n\nDo you want to continue with this operation?",
+                icon='warning'
+            )
+        
         orig_log = self.controller.log_callback
         self.controller.log_callback = log_hook
-        self.controller.organize_batch(source, dest, operation, dry_run, tag_order, duplicate_mode, use_earliest, formats=formats, eta_callback=eta_callback, max_workers=max_workers)
+        self.controller.organize_batch(
+            source, dest, operation, dry_run, tag_order, duplicate_mode, use_earliest, 
+            formats=formats, eta_callback=eta_callback, max_workers=max_workers,
+            memory_warning_callback=memory_warning_callback
+        )
         self.controller.log_callback = orig_log
         self.is_processing = False
         self.organize_btn.config(state='normal')
@@ -739,7 +751,7 @@ if __name__ == "__main__":
                 messagebox.showerror("Startup Error", err)
                 temp_root.destroy()
         except Exception:
-            print(err)
+            logger.error(err)
 
 import exiftool_wrapper
 from media_organizer.app.exiftool_check import get_exiftool_path
@@ -760,7 +772,7 @@ if sys.platform == 'win32':
             if any('exiftool' in x for x in cmd):
                 exiftool_dir = os.path.dirname(get_exiftool_path())
                 kwargs['cwd'] = exiftool_dir
-                print(f"[DEBUG] Launching exiftool with cwd={exiftool_dir} (cmd={args[0]}) via {method_name}")
+                logger.debug(f"Launching exiftool with cwd={exiftool_dir} (cmd={args[0]}) via {method_name}")
         return args, kwargs
 
     def _popen_with_cwd(*args, **kwargs):

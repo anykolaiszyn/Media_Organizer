@@ -5,6 +5,7 @@ from .scanner import scan_media_files
 from .organizer import organize_files, get_organize_preview
 from .logger import logger
 from .batch_results_db import BatchResultsDB
+from .memory_monitor import MemoryMonitor, check_dataset_size_and_warn
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 class MediaOrganizerController:
@@ -32,7 +33,7 @@ class MediaOrganizerController:
         t = threading.Thread(target=worker, daemon=True)
         t.start()
 
-    def organize_batch(self, source, dest, operation, dry_run, tag_order, duplicate_mode, use_earliest, formats=None, eta_callback=None, max_workers=4):
+    def organize_batch(self, source, dest, operation, dry_run, tag_order, duplicate_mode, use_earliest, formats=None, eta_callback=None, max_workers=4, memory_warning_callback=None):
         """Organize files in batch mode with concurrency and progress reporting."""
         import time
         self.cancel_flag = False
@@ -40,17 +41,33 @@ class MediaOrganizerController:
             self.batch_db.clear()
         else:
             self.batch_db = BatchResultsDB()
+        
+        # Log initial memory state
+        MemoryMonitor.log_memory_stats("Before scanning")
+        
         self._log(f"Scanning {source} for media files...")
         files = scan_media_files(source, formats=formats)
-        self._log(f"Found {len(files)} media files.")
-        total = len(files)
+        file_count = len(files)
+        self._log(f"Found {file_count} media files.")
+        
+        # Check for large dataset and memory warnings
+        if not check_dataset_size_and_warn(file_count, memory_warning_callback):
+            self._log("Operation cancelled due to dataset size concerns.")
+            return
+        
+        # Log memory after file scanning
+        if file_count >= MemoryMonitor.LARGE_DATASET_WARNING:
+            MemoryMonitor.log_memory_stats(f"After scanning {file_count:,} files")
+        
+        total = file_count
         completed = 0
         start_time = time.time()
         import os
         # SAFETY: Set default max_workers to 3
         try:
             max_workers = int(os.environ.get('MEDIA_ORGANIZER_MAX_WORKERS', 3))
-        except Exception:
+        except (ValueError, TypeError) as e:
+            self._log(f"Warning: Invalid MEDIA_ORGANIZER_MAX_WORKERS value, using default (3): {e}")
             max_workers = 3
         if max_workers < 1:
             max_workers = 1
@@ -66,9 +83,30 @@ class MediaOrganizerController:
             status = 'done'
             try:
                 organize_files([file_path], dest, operation, dry_run=dry_run, tag_order=tag_order, duplicate_mode=duplicate_mode, use_earliest=use_earliest)
-            except Exception as e:
-                error = str(e)
+            except FileNotFoundError as e:
+                error = f"File not found: {e}"
                 status = 'error'
+                self._log(f"ERROR: File not found - {file_path}: {e}")
+            except PermissionError as e:
+                error = f"Permission denied: {e}"
+                status = 'error'
+                self._log(f"ERROR: Permission denied - {file_path}: {e}")
+            except OSError as e:
+                error = f"File system error: {e}"
+                status = 'error'
+                self._log(f"ERROR: File system error - {file_path}: {e}")
+            except ValueError as e:
+                error = f"Invalid file or metadata: {e}"
+                status = 'error'
+                self._log(f"ERROR: Invalid data - {file_path}: {e}")
+            except Exception as e:
+                error = f"Unexpected error: {e}"
+                status = 'error'
+                self._log(f"ERROR: Unexpected error - {file_path}: {e}")
+                # Re-raise for debugging in development, but log for production
+                import os
+                if os.environ.get('MEDIA_ORGANIZER_DEBUG'):
+                    raise
             self.batch_db.insert_result(file_path, operation, status, metadata, error=error)
             return status, file_path
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -99,6 +137,16 @@ class MediaOrganizerController:
                     break
         if eta_callback:
             eta_callback(0)
+        
+        # Log final memory state for large datasets
+        if file_count >= MemoryMonitor.LARGE_DATASET_WARNING:
+            MemoryMonitor.log_memory_stats(f"After processing {file_count:,} files")
+            
+            # Check for memory pressure after processing
+            memory_warning = MemoryMonitor.check_memory_pressure()
+            if memory_warning:
+                self._log(f"[MEMORY WARNING] {memory_warning}")
+        
         self._log("Done.")
         self._progress(100)
 
