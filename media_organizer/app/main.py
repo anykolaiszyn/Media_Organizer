@@ -5,12 +5,14 @@ os.environ['EXIFTOOL_PATH'] = os.path.dirname(get_exiftool_path())
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext
+import tkinter.ttk as ttk
 import threading
 from media_organizer.app.ui_controller import MediaOrganizerController
 from media_organizer.app.exiftool_check import check_exiftool
 from media_organizer.app.config import IMAGE_FORMATS, VIDEO_FORMATS
 from media_organizer.app.logger import logger
 import json
+from typing import Optional
 
 APP_VERSION = "1.0.0"
 
@@ -41,14 +43,15 @@ class MediaOrganizerApp:
             offset = page_var.get() * page_size
             results.clear()
             db = self.controller.batch_db
-            rows = db.fetch_results(limit=page_size, offset=offset)
-            for row in rows:
-                filename, action, status, metadata, error = row
-                results.append(row)
-                line = f"{filename} | {action} | {status}"
-                if error:
-                    line += f" | ERROR: {error}"
-                st.insert('end', line + '\n')
+            if db is not None:
+                rows = db.fetch_results(limit=page_size, offset=offset)
+                for row in rows:
+                    filename, action, status, metadata, error = row
+                    results.append(row)
+                    line = f"{filename} | {action} | {status}"
+                    if error:
+                        line += f" | ERROR: {error}"
+                    st.insert('end', line + '\n')
             st.config(state='disabled')
             page_label.config(text=f"Page {page_var.get()+1}")
 
@@ -76,12 +79,13 @@ class MediaOrganizerApp:
                 db = self.controller.batch_db
                 all_rows = []
                 offset = 0
-                while True:
-                    rows = db.fetch_results(limit=page_size, offset=offset)
-                    if not rows:
-                        break
-                    all_rows.extend(rows)
-                    offset += page_size
+                if db is not None:
+                    while True:
+                        rows = db.fetch_results(limit=page_size, offset=offset)
+                        if not rows:
+                            break
+                        all_rows.extend(rows)
+                        offset += page_size
                 with open(file_path, 'w', encoding='utf-8') as f:
                     f.write('filename,action,status,error\n')
                     for row in all_rows:
@@ -105,7 +109,7 @@ class MediaOrganizerApp:
         win.title("Scanning Files")
         win.geometry("500x300")
         progress_var = tk.DoubleVar(value=0)
-        progress = tk.ttk.Progressbar(win, variable=progress_var, maximum=100)
+        progress = ttk.Progressbar(win, variable=progress_var, maximum=100)
         progress.pack(fill='x', padx=10, pady=10)
         found_label = Label(win, text="Files found: 0")
         found_label.pack(padx=10, anchor='w')
@@ -197,7 +201,6 @@ class MediaOrganizerApp:
         self.load_last_folders()
 
         # --- Tabbed UI ---
-        import tkinter.ttk as ttk
         self.notebook = ttk.Notebook(root)
         self.notebook.pack(expand=True, fill="both")
 
@@ -285,7 +288,7 @@ class MediaOrganizerApp:
         self.cancel_btn.grid(row=5, column=2, pady=10, sticky='ew')
 
         self.progress_var = tk.DoubleVar(value=0)
-        self.progress = tk.ttk.Progressbar(self.org_frame, variable=self.progress_var, maximum=100)
+        self.progress = ttk.Progressbar(self.org_frame, variable=self.progress_var, maximum=100)
         self.progress.grid(row=6, column=1, sticky='ew', pady=5)
         self.eta_var = tk.StringVar(value="")
         self.eta_label = tk.Label(self.org_frame, textvariable=self.eta_var, anchor='w', fg='green')
@@ -327,7 +330,6 @@ class MediaOrganizerApp:
         search_entry = tk.Entry(search_frame, textvariable=self.meta_search_var, width=30)
         search_entry.pack(side='left', padx=(2, 10))
         # Table for metadata
-        import tkinter.ttk as ttk
         self.meta_table = ttk.Treeview(meta_frame, columns=("Key", "Value"), show="headings", height=25)
         self.meta_table.heading("Key", text="Key")
         self.meta_table.heading("Value", text="Value")
@@ -620,14 +622,15 @@ class MediaOrganizerApp:
             offset = page_var.get() * page_size
             results.clear()
             db = self.controller.batch_db
-            rows = db.fetch_results(limit=page_size, offset=offset)
-            for row in rows:
-                filename, action, status, metadata, error = row
-                results.append(row)
-                line = f"{filename} | {action} | {status}"
-                if error:
-                    line += f" | ERROR: {error}"
-                st.insert('end', line + '\n')
+            if db is not None:
+                rows = db.fetch_results(limit=page_size, offset=offset)
+                for row in rows:
+                    filename, action, status, metadata, error = row
+                    results.append(row)
+                    line = f"{filename} | {action} | {status}"
+                    if error:
+                        line += f" | ERROR: {error}"
+                    st.insert('end', line + '\n')
             st.config(state='disabled')
             page_label.config(text=f"Page {page_var.get()+1}")
 
@@ -655,12 +658,13 @@ class MediaOrganizerApp:
                 db = self.controller.batch_db
                 all_rows = []
                 offset = 0
-                while True:
-                    rows = db.fetch_results(limit=page_size, offset=offset)
-                    if not rows:
-                        break
-                    all_rows.extend(rows)
-                    offset += page_size
+                if db is not None:
+                    while True:
+                        rows = db.fetch_results(limit=page_size, offset=offset)
+                        if not rows:
+                            break
+                        all_rows.extend(rows)
+                        offset += page_size
                 with open(file_path, 'w', encoding='utf-8') as f:
                     f.write('filename,action,status,error\n')
                     for row in all_rows:
@@ -728,6 +732,7 @@ if not check_exiftool():
 
 # Main entry point
 if __name__ == "__main__":
+    root: Optional[tk.Tk] = None
     try:
         root = tk.Tk()
         import tkinter.ttk  # Needed for Progressbar
@@ -741,7 +746,7 @@ if __name__ == "__main__":
         err = f"Startup error: {e}\n\n{traceback.format_exc()}"
         try:
             # Only create a new Tk root if one does not already exist
-            if 'root' in locals() and root is not None:
+            if root is not None:
                 root.withdraw()
                 messagebox.showerror("Startup Error", err)
                 root.destroy()
@@ -753,10 +758,15 @@ if __name__ == "__main__":
         except Exception:
             logger.error(err)
 
-import exiftool_wrapper
-from media_organizer.app.exiftool_check import get_exiftool_path
-# --- ExifTool subprocess monkey-patch for Windows ---
-exiftool_wrapper.ExifToolWrapper.PROGRAM = get_exiftool_path()
+# Handle optional exiftool_wrapper import
+try:
+    import exiftool_wrapper
+    from media_organizer.app.exiftool_check import get_exiftool_path
+    # --- ExifTool subprocess monkey-patch for Windows ---
+    exiftool_wrapper.ExifToolWrapper.PROGRAM = get_exiftool_path()
+except ImportError:
+    logger.warning("exiftool_wrapper not available - some functionality may be limited")
+
 import sys
 import subprocess
 import os
@@ -785,13 +795,19 @@ if sys.platform == 'win32':
         args, kwargs = _patch_cwd_for_exiftool(args, kwargs, 'run')
         kwargs.setdefault('creationflags', 0)
         kwargs['creationflags'] |= getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
-        return _orig_run(*args, **kwargs)
+        if _orig_run is not None:
+            return _orig_run(*args, **kwargs)
+        else:
+            raise RuntimeError("subprocess.run is not available")
 
     def _call_with_cwd(*args, **kwargs):
         args, kwargs = _patch_cwd_for_exiftool(args, kwargs, 'call')
         kwargs.setdefault('creationflags', 0)
         kwargs['creationflags'] |= getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
-        return _orig_call(*args, **kwargs)
+        if _orig_call is not None:
+            return _orig_call(*args, **kwargs)
+        else:
+            raise RuntimeError("subprocess.call is not available")
 
     subprocess.Popen = _popen_with_cwd
     if _orig_run:
