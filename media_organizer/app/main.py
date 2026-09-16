@@ -253,18 +253,18 @@ class MediaOrganizerApp:
         # Checkbox for using earliest date from available tags
         tk.Checkbutton(tag_frame, text="Use earliest date from available tags (ignore order)", variable=self.use_earliest_date).grid(row=len(self.tag_vars)+2, column=0, columnspan=2, sticky='w', pady=(6,0))
 
-        # Duplicate handling option
-        self.duplicate_mode = tk.StringVar(value='overwrite')
+        # Duplicate handling is automatic: a destination holding identical content
+        # is left alone, and one holding different content pushes this file to the
+        # next free _1, _2, ... name. Nothing is ever overwritten.
         dup_frame = tk.Frame(self.org_frame)
         dup_frame.grid(row=4, column=2, rowspan=1, sticky='ne', padx=5, pady=2)
-        label_dup = tk.Label(dup_frame, text="If file exists:")
-        label_dup.grid(row=0, column=0, sticky='w')
-        rb_overwrite = tk.Radiobutton(dup_frame, text="Overwrite", variable=self.duplicate_mode, value='overwrite')
-        rb_overwrite.grid(row=1, column=0, sticky='w')
-        rb_preserve = tk.Radiobutton(dup_frame, text="Preserve (append _1, _2, ...)", variable=self.duplicate_mode, value='preserve')
-        rb_preserve.grid(row=2, column=0, sticky='w')
-        self.dup_info_label = tk.Label(dup_frame, text="If a file with the same name exists in the destination, it will be overwritten.", fg='orange', wraplength=180, justify='left')
-        self.dup_info_label.grid(row=3, column=0, sticky='w', pady=(2,0))
+        tk.Label(dup_frame, text="If file exists:").grid(row=0, column=0, sticky='w')
+        tk.Label(
+            dup_frame,
+            text="Identical files are skipped. Different files with the same name "
+                 "are kept alongside as _1, _2, ...",
+            fg='gray', wraplength=180, justify='left',
+        ).grid(row=1, column=0, sticky='w', pady=(2, 0))
 
 
         self.organize_btn = tk.Button(self.org_frame, text="Organize", command=self.start_organize, width=20)
@@ -508,7 +508,6 @@ class MediaOrganizerApp:
         self.cancel_btn.config(state='normal')
         self.current_file_var.set("")
         self.summary = {'organized': 0, 'skipped': 0, 'errors': 0}
-        duplicate_mode = self.duplicate_mode.get()
         # Allow user to configure max workers (concurrent ExifTool processes)
         import os
         max_workers = 4
@@ -522,7 +521,7 @@ class MediaOrganizerApp:
         self._flush_log_buffer()
         def run_with_error_handling():
             try:
-                self.run_with_summary(source, dest, operation, dry_run, tag_order, formats, duplicate_mode, max_workers, use_earliest)
+                self.run_with_summary(source, dest, operation, dry_run, tag_order, formats, max_workers, use_earliest)
             except Exception as e:
                 import traceback
                 tb = traceback.format_exc()
@@ -544,7 +543,7 @@ class MediaOrganizerApp:
         # Show summary dialog after cancel so user sees what was done
         self.show_summary_dialog()
 
-    def run_with_summary(self, source, dest, operation, dry_run, tag_order, formats=None, duplicate_mode='overwrite', max_workers=4, use_earliest=False):
+    def run_with_summary(self, source, dest, operation, dry_run, tag_order, formats=None, max_workers=4, use_earliest=False):
         self.batch_cancelled = False
         def eta_callback(eta):
             if eta > 0:
@@ -587,7 +586,7 @@ class MediaOrganizerApp:
         orig_log = self.controller.log_callback
         self.controller.log_callback = log_hook
         self.controller.organize_batch(
-            source, dest, operation, dry_run, tag_order, duplicate_mode, use_earliest, 
+            source, dest, operation, dry_run, tag_order, use_earliest,
             formats=formats, eta_callback=eta_callback, max_workers=max_workers,
             memory_warning_callback=memory_warning_callback
         )

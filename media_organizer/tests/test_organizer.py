@@ -1,6 +1,6 @@
 import tempfile
 from pathlib import Path
-from media_organizer.app.organizer import organize_files, get_organize_preview
+from media_organizer.app.organizer import Placement, organize_files, get_organize_preview
 from media_organizer.app.utils import ensure_dir
 import shutil
 import os
@@ -60,6 +60,39 @@ def test_organize_files_move(tmp_path):
     dest = tmp_path / '2022' / '01' / 'a.jpg'
     assert dest.exists()
     assert not f1.exists()  # Move removes source
+
+def test_organize_files_is_idempotent_across_runs(tmp_path):
+    """The 'top up' guarantee: re-organizing the same source adds nothing."""
+    src = tmp_path / 'src' / 'a.jpg'
+    src.parent.mkdir()
+    src.write_bytes(b'photo')
+    dest = tmp_path / 'lib'
+
+    first = organize_files([str(src)], dest, operation='copy')
+    second = organize_files([str(src)], dest, operation='copy')
+
+    month = dest / '2022' / '01'
+    assert [p.name for p in month.iterdir()] == ['a.jpg']
+    # Overwriting would also leave one file, so assert it was *skipped*.
+    assert [outcome for _, outcome in first] == [Placement.WROTE]
+    assert [outcome for _, outcome in second] == [Placement.SKIPPED_IDENTICAL]
+
+
+def test_organize_files_keeps_distinct_files_sharing_a_name(tmp_path):
+    a = tmp_path / 'one' / 'a.jpg'
+    a.parent.mkdir()
+    a.write_bytes(b'first photo')
+    b = tmp_path / 'two' / 'a.jpg'
+    b.parent.mkdir()
+    b.write_bytes(b'second photo')
+    dest = tmp_path / 'lib'
+
+    organize_files([str(a), str(b)], dest, operation='copy')
+
+    month = dest / '2022' / '01'
+    assert sorted(p.name for p in month.iterdir()) == ['a.jpg', 'a_1.jpg']
+    assert sorted(p.read_bytes() for p in month.iterdir()) == [b'first photo', b'second photo']
+
 
 def test_organize_files_skip(tmp_path):
     f1 = tmp_path / 'a.bad'

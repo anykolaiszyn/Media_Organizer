@@ -6,6 +6,7 @@ from .organizer import organize_files, get_organize_preview
 from .logger import logger
 from .batch_results_db import BatchResultsDB
 from .memory_monitor import MemoryMonitor, check_dataset_size_and_warn
+from .utils import check_source_dest_overlap
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 class MediaOrganizerController:
@@ -33,9 +34,10 @@ class MediaOrganizerController:
         t = threading.Thread(target=worker, daemon=True)
         t.start()
 
-    def organize_batch(self, source, dest, operation, dry_run, tag_order, duplicate_mode, use_earliest, formats=None, eta_callback=None, max_workers=4, memory_warning_callback=None):
+    def organize_batch(self, source, dest, operation, dry_run, tag_order, use_earliest, formats=None, eta_callback=None, max_workers=4, memory_warning_callback=None):
         """Organize files in batch mode with concurrency and progress reporting."""
         import time
+        check_source_dest_overlap(source, dest)
         self.cancel_flag = False
         if self.batch_db:
             self.batch_db.clear()
@@ -83,7 +85,7 @@ class MediaOrganizerController:
             error = None
             status = 'done'
             try:
-                organize_files([file_path], dest, operation, dry_run=dry_run, tag_order=tag_order, duplicate_mode=duplicate_mode, use_earliest=use_earliest)
+                organize_files([file_path], dest, operation, dry_run=dry_run, tag_order=tag_order, use_earliest=use_earliest)
             except FileNotFoundError as e:
                 error = f"File not found: {e}"
                 status = 'error'
