@@ -147,6 +147,8 @@ def test_cancel_reports_cancelled_and_stops_early(batch, monkeypatch):
     finished = [e for e in events if isinstance(e, ev.Finished)][-1]
     assert finished.cancelled is True
     assert len([e for e in events if isinstance(e, ev.FileDone)]) < 30
+    if controller.batch_db is not None:
+        controller.batch_db.close()
 
 
 def test_nothing_is_emitted_after_finished(batch):
