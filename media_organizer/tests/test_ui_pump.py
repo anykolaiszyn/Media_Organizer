@@ -8,13 +8,33 @@ from media_organizer.app import batch_events as ev
 from media_organizer.app.main import MediaOrganizerApp
 
 
+@pytest.fixture(scope='module')
+def root():
+    """One Tk interpreter for the whole file.
+
+    Creating and destroying a tk.Tk() per test causes real Tcl-interpreter
+    churn; occasionally (rare, but reproducible over dozens of runs) a new
+    interpreter created shortly after the previous one was torn down hits
+    `_tkinter.TclError: invalid command name "tcl_findLibrary"` during
+    construction. Sharing one root across the module's tests avoids that
+    churn. Each test still gets its own fresh `MediaOrganizerApp` (see the
+    `app` fixture below), which rebuilds the whole widget tree on this root
+    and tears it down again, so no state leaks between tests.
+    """
+    r = tk.Tk()
+    r.withdraw()
+    yield r
+    r.destroy()
+
+
 @pytest.fixture
-def app():
-    root = tk.Tk()
-    root.withdraw()
+def app(root):
     instance = MediaOrganizerApp(root)
     yield instance
-    root.destroy()
+    # Tear down every widget this test's instance built on the shared root
+    # (menu included), so the next test starts from a bare root again.
+    for child in list(root.children.values()):
+        child.destroy()
 
 
 def test_pump_advances_progress_and_current_file(app):
