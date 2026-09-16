@@ -239,20 +239,6 @@ class MediaOrganizerApp:
         self.dry_run_cb = tk.Checkbutton(self.org_frame, text="Dry Run (Full Simulation, No File Changes)", variable=self.dry_run_var)
         self.dry_run_cb.grid(row=3, column=1, sticky='w')
 
-    def show_scan_info(self):
-        """Show async scan dialog with clear explanation."""
-        import tkinter as tk
-        from tkinter import messagebox
-        msg = (
-            "Quick Scan (Async):\n\n"
-            "- Quickly lists all supported files in the source folder using a fast, memory-efficient scan.\n"
-            "- Lets you preview and cancel before organizing.\n"
-            "- Does NOT simulate file moves/copies or show destination paths.\n\n"
-            "For a full simulation of the batch operation (including destination paths, duplicate handling, and errors), use Dry Run."
-        )
-        if messagebox.askokcancel("Quick Scan Info", msg):
-            self.scan_files_dialog()
-
         tag_frame = tk.Frame(self.org_frame)
         tag_frame.grid(row=4, column=0, columnspan=2, sticky='ew', pady=2)
         tag_frame.grid_columnconfigure(0, weight=0)
@@ -341,6 +327,20 @@ class MediaOrganizerApp:
         # Info label
         self.meta_info_label = tk.Label(meta_frame, text='Select a file and click "View Metadata" to see all available metadata.', anchor='w', fg='gray')
         self.meta_info_label.pack(fill='x', pady=(0, 5))
+
+    def show_scan_info(self):
+        """Show async scan dialog with clear explanation."""
+        from tkinter import messagebox
+        msg = (
+            "Quick Scan (Async):\n\n"
+            "- Quickly lists all supported files in the source folder using a fast, memory-efficient scan.\n"
+            "- Lets you preview and cancel before organizing.\n"
+            "- Does NOT simulate file moves/copies or show destination paths.\n\n"
+            "For a full simulation of the batch operation (including destination paths, duplicate handling, and errors), use Dry Run."
+        )
+        if messagebox.askokcancel("Quick Scan Info", msg):
+            self.scan_files_dialog()
+
     def browse_meta_file(self):
         path = filedialog.askopenfilename(title="Select media file")
         if path:
@@ -767,50 +767,3 @@ try:
 except ImportError:
     logger.warning("exiftool library not available - some functionality may be limited")
 
-import sys
-import subprocess
-import os
-if sys.platform == 'win32':
-    from media_organizer.app.exiftool_check import get_exiftool_path
-    _orig_popen = subprocess.Popen
-    _orig_run = getattr(subprocess, 'run', None)
-    _orig_call = getattr(subprocess, 'call', None)
-
-    def _patch_cwd_for_exiftool(args, kwargs, method_name):
-        if args and isinstance(args[0], (list, tuple)):
-            cmd = [str(x).lower() for x in args[0]]
-            if any('exiftool' in x for x in cmd):
-                exiftool_dir = os.path.dirname(get_exiftool_path())
-                kwargs['cwd'] = exiftool_dir
-                logger.debug(f"Launching exiftool with cwd={exiftool_dir} (cmd={args[0]}) via {method_name}")
-        return args, kwargs
-
-    def _popen_with_cwd(*args, **kwargs):
-        args, kwargs = _patch_cwd_for_exiftool(args, kwargs, 'Popen')
-        kwargs.setdefault('creationflags', 0)
-        kwargs['creationflags'] |= getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
-        return _orig_popen(*args, **kwargs)
-
-    def _run_with_cwd(*args, **kwargs):
-        args, kwargs = _patch_cwd_for_exiftool(args, kwargs, 'run')
-        kwargs.setdefault('creationflags', 0)
-        kwargs['creationflags'] |= getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
-        if _orig_run is not None:
-            return _orig_run(*args, **kwargs)
-        else:
-            raise RuntimeError("subprocess.run is not available")
-
-    def _call_with_cwd(*args, **kwargs):
-        args, kwargs = _patch_cwd_for_exiftool(args, kwargs, 'call')
-        kwargs.setdefault('creationflags', 0)
-        kwargs['creationflags'] |= getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
-        if _orig_call is not None:
-            return _orig_call(*args, **kwargs)
-        else:
-            raise RuntimeError("subprocess.call is not available")
-
-    subprocess.Popen = _popen_with_cwd
-    if _orig_run:
-        subprocess.run = _run_with_cwd
-    if _orig_call:
-        subprocess.call = _call_with_cwd
