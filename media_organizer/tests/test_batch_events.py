@@ -125,7 +125,14 @@ def test_errors_carry_a_message_and_no_outcome(batch):
     assert 'disk on fire' in done.error
 
 
-def test_cancel_reports_cancelled_and_stops_early(batch, monkeypatch):
+def test_cancel_reports_cancelled_and_short_circuits_remaining_files(batch, monkeypatch):
+    """Cancelling partway through stops *real organizing* early (later files
+    are short-circuited to 'cancelled' instead of actually being organized),
+    but every file -- organized or short-circuited -- is still reported via
+    a FileDone event and counted in Finished.counts. See
+    test_cancel_counts_every_actually_cancelled_file for the exact-count
+    regression test.
+    """
     source, dest = batch([Placement.WROTE] * 30)
     controller = MediaOrganizerController()
     events = []
@@ -148,7 +155,86 @@ def test_cancel_reports_cancelled_and_stops_early(batch, monkeypatch):
     try:
         finished = [e for e in events if isinstance(e, ev.Finished)][-1]
         assert finished.cancelled is True
-        assert len([e for e in events if isinstance(e, ev.FileDone)]) < 30
+        # Every one of the 30 files is still reported, even though not all
+        # of them were actually organized (some are short-circuited to
+        # 'cancelled' by organize_one's own cancel_flag check).
+        assert len([e for e in events if isinstance(e, ev.FileDone)]) == 30
+        assert finished.counts.get('cancelled', 0) > 0
+        assert finished.counts.get('wrote', 0) < 30
+        assert sum(finished.counts.values()) == 30
+    finally:
+        if controller.batch_db is not None:
+            controller.batch_db.close()
+
+
+def test_cancel_counts_every_actually_cancelled_file(batch, monkeypatch):
+    """Regression: Finished.counts['cancelled'] must count every file that
+    ends up with 'cancelled' status in batch_db, not just whichever future
+    happened to be `.result()`ed right before the aggregation loop broke
+    early. The old code `break`s out of `as_completed` as soon as it sees
+    `cancel_flag`, but `ThreadPoolExecutor.__exit__` still waits (via
+    `shutdown(wait=True)`) for every other submitted future to finish
+    running -- so those files really do get organized (or short-circuited
+    to 'cancelled') and written to batch_db, they just never get counted.
+
+    To make the split between "already running" and "still queued" files
+    deterministic (rather than racing the aggregation loop against however
+    fast the worker threads happen to be scheduled), this pins exactly
+    `max_workers` files inside `organize_files` on a barrier/event pair
+    before cancelling, so the remaining files are provably still queued
+    -- not yet even past organize_one's own cancel_flag check -- at the
+    moment cancellation happens.
+    """
+    total = 6
+    max_workers = 2
+    source, dest = batch([Placement.WROTE] * total)
+    controller = MediaOrganizerController()
+    events = []
+
+    # +1 party for the test thread itself, so entered.wait() below only
+    # returns once both workers have entered organize_files and are
+    # blocked on `release`.
+    entered = threading.Barrier(max_workers + 1)
+    release = threading.Event()
+
+    def blocking_organize(files, dest_, operation, dry_run=False, tag_order=None,
+                          use_earliest=False):
+        entered.wait(timeout=5)
+        assert release.wait(timeout=5), "test never released blocked workers"
+        return [(str(files[0]), Placement.WROTE)]
+
+    monkeypatch.setattr(
+        'media_organizer.app.ui_controller.organize_files', blocking_organize)
+
+    worker_thread = threading.Thread(
+        target=controller.organize_batch,
+        args=(source, dest, 'copy', False, None, False),
+        kwargs=dict(emit=events.append, max_workers=max_workers),
+    )
+    worker_thread.start()
+
+    # Both workers are now blocked inside organize_files, having already
+    # passed organize_one's cancel_flag check while it was still False.
+    # The other (total - max_workers) files are still sitting in the
+    # executor's queue, not yet processed at all.
+    entered.wait(timeout=5)
+    controller.cancel()
+    release.set()
+    worker_thread.join(timeout=10)
+
+    try:
+        assert not worker_thread.is_alive(), "organize_batch did not finish"
+        finished = [e for e in events if isinstance(e, ev.Finished)][-1]
+        assert finished.counts == {
+            'wrote': max_workers, 'cancelled': total - max_workers,
+        }
+        assert sum(finished.counts.values()) == total
+
+        cancel_lines = [
+            e for e in events
+            if isinstance(e, ev.LogLine) and 'cancelled by user' in e.text
+        ]
+        assert len(cancel_lines) == 1, cancel_lines
     finally:
         if controller.batch_db is not None:
             controller.batch_db.close()

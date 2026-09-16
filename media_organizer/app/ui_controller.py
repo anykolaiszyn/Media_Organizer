@@ -126,6 +126,7 @@ class MediaOrganizerController:
                         file_path, operation, status, metadata, error=error)
             return status, file_path, outcome, error
 
+        cancelled_logged = False
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [executor.submit(organize_one, f) for f in files]
             for future in as_completed(futures):
@@ -136,9 +137,15 @@ class MediaOrganizerController:
                     elapsed = time.time() - start_time
                     eta = int((elapsed / completed) * (total - completed)) if completed else 0
                 emit(FileDone(path, outcome, error, completed, total, eta))
-                if self.cancel_flag:
+                # Do NOT break here: ThreadPoolExecutor.__exit__ already
+                # blocks (shutdown(wait=True)) until every submitted future
+                # finishes running, cancelled or not, so breaking out of
+                # this loop early saves no wall-clock time -- it only stops
+                # us from counting results we're going to wait for anyway.
+                # Draining keeps counts[] (and Finished.counts) accurate.
+                if self.cancel_flag and not cancelled_logged:
+                    cancelled_logged = True
                     emit(LogLine("Operation cancelled by user."))
-                    break
 
         if total >= MemoryMonitor.LARGE_DATASET_WARNING:
             MemoryMonitor.log_memory_stats(f"After processing {total:,} files")
