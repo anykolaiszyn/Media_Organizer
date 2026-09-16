@@ -1,12 +1,17 @@
 import threading
 import time
 import atexit
+import os
+from collections import Counter
 from .scanner import scan_media_files
 from .organizer import organize_files, get_organize_preview
 from .logger import logger
 from .batch_results_db import BatchResultsDB
 from .memory_monitor import MemoryMonitor, check_dataset_size_and_warn
 from .utils import check_source_dest_overlap
+from .batch_events import (
+    Scanned, FileStarted, FileDone, LogLine, Finished,
+)
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 class MediaOrganizerController:
@@ -34,125 +39,111 @@ class MediaOrganizerController:
         t = threading.Thread(target=worker, daemon=True)
         t.start()
 
-    def organize_batch(self, source, dest, operation, dry_run, tag_order, use_earliest, formats=None, eta_callback=None, max_workers=4, memory_warning_callback=None):
-        """Organize files in batch mode with concurrency and progress reporting."""
-        import time
+    @staticmethod
+    def _resolve_max_workers(requested):
+        if requested is None:
+            try:
+                requested = int(os.environ.get('MEDIA_ORGANIZER_MAX_WORKERS', 3))
+            except (ValueError, TypeError):
+                requested = 3
+        return max(1, requested)
+
+    def organize_batch(self, source, dest, operation, dry_run, tag_order, use_earliest,
+                       formats=None, max_workers=None, emit=None,
+                       memory_warning_callback=None):
+        """Organize files concurrently, publishing progress as events.
+
+        `emit` is called with batch_events objects from both this thread and
+        the worker threads, so it must be thread-safe. queue.Queue.put is.
+        """
+        emit = emit or (lambda event: None)
         check_source_dest_overlap(source, dest)
         self.cancel_flag = False
         if self.batch_db:
             self.batch_db.clear()
         else:
             self.batch_db = BatchResultsDB()
-        
-        # Log initial memory state
+
         MemoryMonitor.log_memory_stats("Before scanning")
-        
-        self._log(f"Scanning {source} for media files...")
         files = scan_media_files(source, formats=formats)
-        file_count = len(files)
-        self._log(f"Found {file_count} media files.")
-        
-        # Check for large dataset and memory warnings
-        if not check_dataset_size_and_warn(file_count, memory_warning_callback):
-            self._log("Operation cancelled due to dataset size concerns.")
+        total = len(files)
+        emit(Scanned(total))
+
+        if not check_dataset_size_and_warn(total, memory_warning_callback):
+            emit(LogLine("Operation cancelled due to dataset size concerns."))
+            emit(Finished({}, True, 0.0))
             return
-        
-        # Log memory after file scanning
-        if file_count >= MemoryMonitor.LARGE_DATASET_WARNING:
-            MemoryMonitor.log_memory_stats(f"After scanning {file_count:,} files")
-        
-        total = file_count
+
+        if total >= MemoryMonitor.LARGE_DATASET_WARNING:
+            MemoryMonitor.log_memory_stats(f"After scanning {total:,} files")
+
+        max_workers = self._resolve_max_workers(max_workers)
+        emit(LogLine(f"Using up to {max_workers} concurrent workers for batch processing."))
+
+        counts = Counter()
         completed = 0
         start_time = time.time()
-        import os
-        # SAFETY: Set default max_workers to 3
-        try:
-            max_workers = int(os.environ.get('MEDIA_ORGANIZER_MAX_WORKERS', 3))
-        except (ValueError, TypeError) as e:
-            self._log(f"Warning: Invalid MEDIA_ORGANIZER_MAX_WORKERS value, using default (3): {e}")
-            max_workers = 3
-        if max_workers < 1:
-            max_workers = 1
-        self._log(f"Using up to {max_workers} concurrent workers for batch processing.")
+
         def organize_one(file_path):
             if self.cancel_flag:
                 if self.batch_db is not None:
-                    self.batch_db.insert_result(file_path, operation, 'cancelled', {}, error='Batch cancelled')
-                return 'cancelled', file_path
-            self._log(f"Processing: {file_path}")
+                    with self._lock:
+                        self.batch_db.insert_result(
+                            file_path, operation, 'cancelled', {}, error='Batch cancelled')
+                return 'cancelled', file_path, None, None
+
+            emit(FileStarted(file_path))
             from .metadata_extractor import extract_metadata
             metadata = extract_metadata(file_path)
             error = None
-            status = 'done'
+            outcome = None
             try:
-                organize_files([file_path], dest, operation, dry_run=dry_run, tag_order=tag_order, use_earliest=use_earliest)
-            except FileNotFoundError as e:
-                error = f"File not found: {e}"
-                status = 'error'
-                self._log(f"ERROR: File not found - {file_path}: {e}")
-            except PermissionError as e:
-                error = f"Permission denied: {e}"
-                status = 'error'
-                self._log(f"ERROR: Permission denied - {file_path}: {e}")
-            except OSError as e:
-                error = f"File system error: {e}"
-                status = 'error'
-                self._log(f"ERROR: File system error - {file_path}: {e}")
-            except ValueError as e:
-                error = f"Invalid file or metadata: {e}"
-                status = 'error'
-                self._log(f"ERROR: Invalid data - {file_path}: {e}")
+                results = organize_files(
+                    [file_path], dest, operation, dry_run=dry_run,
+                    tag_order=tag_order, use_earliest=use_earliest)
+                if results:
+                    outcome = results[0][1].value
+                    status = outcome
+                else:
+                    status = 'error'
+                    error = 'File was not placed'
             except Exception as e:
-                error = f"Unexpected error: {e}"
+                error = f"{type(e).__name__}: {e}"
                 status = 'error'
-                self._log(f"ERROR: Unexpected error - {file_path}: {e}")
-                # Re-raise for debugging in development, but log for production
-                import os
+                emit(LogLine(f"ERROR: {file_path}: {error}"))
                 if os.environ.get('MEDIA_ORGANIZER_DEBUG'):
                     raise
+
             if self.batch_db is not None:
-                self.batch_db.insert_result(file_path, operation, status, metadata, error=error)
-            return status, file_path
+                # BatchResultsDB shares one sqlite3 connection across worker
+                # threads; concurrent access without this lock raises
+                # sqlite3.InterfaceError ("bad parameter or other API misuse").
+                with self._lock:
+                    self.batch_db.insert_result(
+                        file_path, operation, status, metadata, error=error)
+            return status, file_path, outcome, error
+
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {}
-            for f in files:
-                while len(futures) >= max_workers:
-                    done, _ = next(iter(futures.items()))
-                    try:
-                        done.result(timeout=0.1)
-                    except Exception:
-                        pass
-                    del futures[done]
-                futures[executor.submit(organize_one, f)] = f
-                # SAFETY: Throttle ExifTool launches to avoid system stress
-                time.sleep(0.05)
+            futures = [executor.submit(organize_one, f) for f in files]
             for future in as_completed(futures):
+                status, path, outcome, error = future.result()
                 with self._lock:
                     completed += 1
+                    counts[status] += 1
                     elapsed = time.time() - start_time
-                    avg_time = elapsed / completed if completed else 0
-                    remaining = total - completed
-                    eta = int(avg_time * remaining)
-                    if eta_callback:
-                        eta_callback(eta)
-                    self._progress(100 * completed / total if total else 100)
+                    eta = int((elapsed / completed) * (total - completed)) if completed else 0
+                emit(FileDone(path, outcome, error, completed, total, eta))
                 if self.cancel_flag:
-                    self._log("Operation cancelled by user.")
+                    emit(LogLine("Operation cancelled by user."))
                     break
-        if eta_callback:
-            eta_callback(0)
-        
-        # Log final memory state for large datasets
-        if file_count >= MemoryMonitor.LARGE_DATASET_WARNING:
-            MemoryMonitor.log_memory_stats(f"After processing {file_count:,} files")
-            
-            # Check for memory pressure after processing
-            memory_warning = MemoryMonitor.check_memory_pressure()
-            if memory_warning:
-                self._log(f"[MEMORY WARNING] {memory_warning}")
-        
-        self._log("Done.")
-        self._progress(100)
+
+        if total >= MemoryMonitor.LARGE_DATASET_WARNING:
+            MemoryMonitor.log_memory_stats(f"After processing {total:,} files")
+            pressure = MemoryMonitor.check_memory_pressure()
+            if pressure:
+                emit(LogLine(f"[MEMORY WARNING] {pressure}"))
+
+        emit(Finished(dict(counts), self.cancel_flag, time.time() - start_time))
 
     def get_preview_list(self, source, dest, tag_order=None, formats=None, progress_callback=None, cancel_flag=None):
         """

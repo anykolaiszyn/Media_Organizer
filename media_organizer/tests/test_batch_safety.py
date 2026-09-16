@@ -2,6 +2,7 @@ import os
 import threading
 import time
 
+from media_organizer.app.organizer import Placement
 from media_organizer.app.ui_controller import MediaOrganizerController
 
 
@@ -28,7 +29,8 @@ def test_batch_never_exceeds_the_worker_limit(monkeypatch, tmp_path):
     max_active = 0
     lock = threading.Lock()
 
-    def tracked_organize(files, dest, operation, dry_run=False, tag_order=None, use_earliest=False):
+    def tracked_organize(files, dest, operation, dry_run=False, tag_order=None,
+                         use_earliest=False):
         nonlocal active, max_active
         with lock:
             active += 1
@@ -36,7 +38,7 @@ def test_batch_never_exceeds_the_worker_limit(monkeypatch, tmp_path):
         time.sleep(0.05)
         with lock:
             active -= 1
-        return []
+        return [(str(files[0]), Placement.WROTE)]
 
     monkeypatch.setattr("media_organizer.app.ui_controller.organize_files", tracked_organize)
 
@@ -48,7 +50,7 @@ def test_batch_never_exceeds_the_worker_limit(monkeypatch, tmp_path):
 
             controller.organize_batch(
                 str(source), str(dest), 'copy', True, None, False,
-                formats=None, eta_callback=None, max_workers=max_workers,
+                formats=None, max_workers=max_workers,
             )
 
             assert max_active > 0, "organize_files was never called - test proves nothing"
