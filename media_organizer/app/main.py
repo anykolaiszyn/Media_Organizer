@@ -7,10 +7,14 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext
 import tkinter.ttk as ttk
 import threading
+import queue
+import traceback
 from media_organizer.app.ui_controller import MediaOrganizerController
 from media_organizer.app.exiftool_check import check_exiftool
 from media_organizer.app.config import IMAGE_FORMATS, VIDEO_FORMATS
 from media_organizer.app.logger import logger
+from media_organizer.app import batch_events as ev
+from media_organizer.app.utils import check_source_dest_overlap
 import json
 from typing import Optional
 
@@ -147,9 +151,8 @@ class MediaOrganizerApp:
         win.wait_window()
     def __init__(self, root):
         self.root = root
-        self.log_callback = self._log_callback
-        self.progress_callback = self._progress_callback
-        self.controller = MediaOrganizerController(self.log_callback, self.progress_callback)
+        self.controller = MediaOrganizerController()
+        self.event_queue = queue.Queue()
         root.title("Media Organizer")
         # Ensure cleanup on window close
         root.protocol("WM_DELETE_WINDOW", self.cleanup_on_exit)
@@ -413,41 +416,6 @@ class MediaOrganizerApp:
             if query in k.lower() or query in str(v).lower():
                 self.meta_table.insert('', 'end', values=(k, v), tags=(tag,))
 
-    def _log_callback(self, msg):
-        # Throttle log updates: buffer messages and flush every 100ms or if buffer is large
-        if not hasattr(self, '_log_buffer'):
-            self._log_buffer = []
-            self._log_flush_scheduled = False
-        self._log_buffer.append(msg)
-        # Log to debug for troubleshooting
-        logger.debug(f"Log callback received: {msg}")
-        if len(self._log_buffer) >= 20:
-            self._flush_log_buffer()
-        elif not self._log_flush_scheduled:
-            self._log_flush_scheduled = True
-            self.root.after(100, self._flush_log_buffer)
-
-    def _flush_log_buffer(self):
-        if not hasattr(self, '_log_buffer') or not self._log_buffer:
-            self._log_flush_scheduled = False
-            return
-        # Log flush event at debug level
-        logger.debug(f"Flushing {len(self._log_buffer)} log buffer messages")
-        if hasattr(self, 'log_window') and self.log_window:
-            self.log_window.config(state='normal')
-            for msg in self._log_buffer:
-                self.log_window.insert('end', msg + '\n')
-            self.log_window.config(state='disabled')
-            self.log_window.see('end')
-        self._log_buffer.clear()
-        self._log_flush_scheduled = False
-
-    def _progress_callback(self, pct):
-        if hasattr(self, 'progress_var'):
-            self.progress_var.set(pct)
-            # Force UI update for smoother progress
-            self.root.update_idletasks()
-
     def browse_source(self):
         path = filedialog.askdirectory(initialdir=self.source_var.get() or None)
         if path:
@@ -501,110 +469,133 @@ class MediaOrganizerApp:
         if not source or not dest:
             messagebox.showerror("Error", "Please select both source and destination folders.")
             return
+
+        try:
+            check_source_dest_overlap(source, dest)
+        except ValueError as e:
+            messagebox.showerror("Invalid Folders", str(e))
+            return
+
         self.progress_var.set(0)
         self.eta_var.set("")
+        self.current_file_var.set("")
         self.is_processing = True
+        self.batch_cancelled = False
         self.organize_btn.config(state='disabled')
         self.cancel_btn.config(state='normal')
-        self.current_file_var.set("")
-        self.summary = {'organized': 0, 'skipped': 0, 'errors': 0}
-        # Allow user to configure max workers (concurrent ExifTool processes)
-        import os
-        max_workers = 4
+        self.summary = {'organized': 0, 'skipped': 0, 'errors': 0, 'cancelled': 0}
+        self.event_queue = queue.Queue()
+
+        max_workers = None
+        threading.Thread(
+            target=self._run_batch,
+            args=(source, dest, operation, dry_run, tag_order, formats,
+                  max_workers, use_earliest),
+            daemon=True,
+        ).start()
+        self.root.after(100, self._pump_batch_events)
+
+    def _run_batch(self, source, dest, operation, dry_run, tag_order, formats,
+                   max_workers, use_earliest):
+        """Runs on a worker thread. Touches no widgets - only the queue."""
         try:
-            max_workers = int(os.environ.get('MEDIA_ORGANIZER_MAX_WORKERS', 4))
-        except Exception:
-            max_workers = 4
-        # Show status in log window
-        self.log_callback(f"[INFO] Using up to {max_workers} concurrent ExifTool processes.")
-        # Force immediate log flush so user sees output right away
-        self._flush_log_buffer()
-        def run_with_error_handling():
-            try:
-                self.run_with_summary(source, dest, operation, dry_run, tag_order, formats, max_workers, use_earliest)
-            except Exception as e:
-                import traceback
-                tb = traceback.format_exc()
-                err_msg = f"[FATAL ERROR] Batch operation failed: {e}\n{tb}"
-                self.log_callback(err_msg)
-                try:
-                    from tkinter import messagebox
-                    self.root.after(0, lambda: messagebox.showerror("Batch Error", err_msg))
-                except Exception:
-                    pass
-        threading.Thread(target=run_with_error_handling, daemon=True).start()
-
-    def cancel_organize(self):
-        self.controller.cancel()
-        self.cancel_btn.config(state='disabled')
-        self.is_processing = False
-        self.batch_cancelled = True
-        self.organize_btn.config(state='normal')
-        # Show summary dialog after cancel so user sees what was done
-        self.show_summary_dialog()
-
-    def run_with_summary(self, source, dest, operation, dry_run, tag_order, formats=None, max_workers=4, use_earliest=False):
-        self.batch_cancelled = False
-        def eta_callback(eta):
-            if eta > 0:
-                self.eta_var.set(f"ETA: {eta//60}m {eta%60}s")
-            else:
-                self.eta_var.set("")
-            self.root.update_idletasks()
-        self.skipped_files = []
-        self.error_files = []
-        def log_hook(msg):
-            self.log_callback(msg)
-            lower_msg = msg.lower()
-            # Show current file in UI if possible
-            if hasattr(self, 'current_file_var') and ("processing:" in lower_msg or "processing" in lower_msg):
-                import re
-                m = re.search(r'processing: (.+)', lower_msg)
-                if m:
-                    self.current_file_var.set(m.group(1))
-                    self.root.update_idletasks()
-            # Match for successful file operations
-            if any(word in lower_msg for word in ["copied", "moved", "moved file", "copied file", "file moved", "file copied"]):
-                self.summary['organized'] += 1
-            # Match for skipped files
-            elif any(word in lower_msg for word in ["skipping", "skipped", "already exists", "duplicate", "no date found", "unsupported"]):
-                self.summary['skipped'] += 1
-                self.skipped_files.append(msg)
-            # Match for errors
-            elif any(word in lower_msg for word in ["failed", "error", "could not", "permission denied", "exception"]):
-                self.summary['errors'] += 1
-                self.error_files.append(msg)
-        # Memory warning callback for large datasets
-        def memory_warning_callback(title, message):
-            """Show memory warning dialog and return user's choice."""
-            return messagebox.askyesno(
-                title,
-                message + "\n\nDo you want to continue with this operation?",
-                icon='warning'
+            self.controller.organize_batch(
+                source, dest, operation, dry_run, tag_order, use_earliest,
+                formats=formats, max_workers=max_workers,
+                emit=self.event_queue.put,
+                memory_warning_callback=self._ask_memory_warning,
             )
-        
-        orig_log = self.controller.log_callback
-        self.controller.log_callback = log_hook
-        self.controller.organize_batch(
-            source, dest, operation, dry_run, tag_order, use_earliest,
-            formats=formats, eta_callback=eta_callback, max_workers=max_workers,
-            memory_warning_callback=memory_warning_callback
-        )
-        self.controller.log_callback = orig_log
+        except Exception as e:
+            self.event_queue.put(ev.LogLine(f"[FATAL] {e}\n{traceback.format_exc()}"))
+            self.event_queue.put(ev.Finished({'error': 1}, False, 0.0))
+
+    def _pump_batch_events(self):
+        """Runs on the Tk main thread. The only place widgets are touched."""
+        finished = None
+        try:
+            while True:
+                event = self.event_queue.get_nowait()
+                if isinstance(event, ev.Scanned):
+                    self.progress_var.set(0)
+                    self._append_log(f"Found {event.total} media files.")
+                elif isinstance(event, ev.FileStarted):
+                    self.current_file_var.set(event.path)
+                elif isinstance(event, ev.FileDone):
+                    pct = 100 * event.completed / event.total if event.total else 100
+                    self.progress_var.set(pct)
+                    self.eta_var.set(
+                        f"ETA: {event.eta_seconds // 60}m {event.eta_seconds % 60}s"
+                        if event.eta_seconds else ""
+                    )
+                elif isinstance(event, ev.LogLine):
+                    self._append_log(event.text)
+                elif isinstance(event, ev.Finished):
+                    finished = event
+        except queue.Empty:
+            pass
+
+        if finished is None:
+            self.root.after(100, self._pump_batch_events)
+        else:
+            self._on_batch_finished(finished)
+
+    def _on_batch_finished(self, finished):
+        counts = finished.counts
+        self.summary = {
+            'organized': counts.get('wrote', 0) + counts.get('renamed', 0),
+            'skipped': counts.get('skipped_identical', 0),
+            'errors': counts.get('error', 0),
+            'cancelled': counts.get('cancelled', 0),
+        }
+        self.batch_cancelled = finished.cancelled
         self.is_processing = False
         self.organize_btn.config(state='normal')
         self.cancel_btn.config(state='disabled')
-        if dry_run:
+        self.current_file_var.set("")
+        self.eta_var.set("")
+        self.progress_var.set(100)
+        if self.dry_run_var.get():
             self.show_dry_run_dialog()
         else:
             self.show_summary_dialog()
 
+    def _append_log(self, text):
+        self.log_window.config(state='normal')
+        self.log_window.insert('end', text + '\n')
+        self.log_window.config(state='disabled')
+        self.log_window.see('end')
+
+    def _ask_memory_warning(self, title, message):
+        """Called from a worker thread; asks on the main thread and waits."""
+        answered = threading.Event()
+        box = {}
+
+        def ask():
+            try:
+                box['answer'] = messagebox.askyesno(
+                    title, message + "\n\nDo you want to continue with this operation?",
+                    icon='warning')
+            finally:
+                answered.set()
+
+        self.root.after(0, ask)
+        if not answered.wait(timeout=300):
+            return False
+        return box.get('answer', False)
+
+    def cancel_organize(self):
+        self.controller.cancel()
+        self.cancel_btn.config(state='disabled')
+        self.batch_cancelled = True
 
     def show_summary_dialog(self):
         import tkinter as tk
         from tkinter import Toplevel, Label, Button, scrolledtext, filedialog, messagebox
         from media_organizer.app.batch_results_db import BatchResultsDB
-        msg = f"Files organized: {self.summary['organized']}\nFiles skipped: {self.summary['skipped']}\nErrors: {self.summary['errors']}"
+        msg = (f"Files organized: {self.summary['organized']}\n"
+               f"Files skipped: {self.summary['skipped']}\n"
+               f"Errors: {self.summary['errors']}\n"
+               f"Cancelled: {self.summary['cancelled']}")
         if hasattr(self, 'batch_cancelled') and self.batch_cancelled:
             msg = "Batch cancelled by user!\n" + msg
         win = Toplevel(self.root)
