@@ -122,3 +122,35 @@ def test_errors_carry_a_message_and_no_outcome(batch):
     done = [e for e in events if isinstance(e, ev.FileDone)][0]
     assert done.outcome is None
     assert 'disk on fire' in done.error
+
+
+def test_cancel_reports_cancelled_and_stops_early(batch, monkeypatch):
+    source, dest = batch([Placement.WROTE] * 30)
+    controller = MediaOrganizerController()
+    events = []
+    seen = itertools.count()
+
+    def cancelling_organize(files, dest_, operation, dry_run=False, tag_order=None,
+                            use_earliest=False):
+        if next(seen) >= 2:
+            controller.cancel()
+        return [(str(files[0]), Placement.WROTE)]
+
+    monkeypatch.setattr(
+        'media_organizer.app.ui_controller.organize_files', cancelling_organize)
+
+    controller.organize_batch(
+        source, dest, 'copy', False, None, False,
+        emit=events.append, max_workers=1,
+    )
+
+    finished = [e for e in events if isinstance(e, ev.Finished)][-1]
+    assert finished.cancelled is True
+    assert len([e for e in events if isinstance(e, ev.FileDone)]) < 30
+
+
+def test_nothing_is_emitted_after_finished(batch):
+    events = run_batch(batch, [Placement.WROTE] * 5)
+
+    finished_at = [i for i, e in enumerate(events) if isinstance(e, ev.Finished)]
+    assert finished_at == [len(events) - 1]
