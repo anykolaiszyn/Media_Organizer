@@ -1,5 +1,6 @@
 """A batch reports what actually happened, through events only."""
 import itertools
+import threading
 
 import pytest
 
@@ -158,3 +159,27 @@ def test_nothing_is_emitted_after_finished(batch):
 
     finished_at = [i for i, e in enumerate(events) if isinstance(e, ev.Finished)]
     assert finished_at == [len(events) - 1]
+
+
+def test_async_scan_publishes_found_files_and_a_total(monkeypatch, tmp_path):
+    source = tmp_path / 'src'
+    source.mkdir()
+    for i in range(3):
+        (source / f'{i}.jpg').write_bytes(b'x')
+
+    controller = MediaOrganizerController()
+    events = []
+    done = threading.Event()
+
+    def record(event):
+        events.append(event)
+        if isinstance(event, ev.ScanFinished):
+            done.set()
+
+    controller.scan_media_files_async(str(source), formats=['.jpg'], emit=record)
+
+    assert done.wait(timeout=10), "scan never finished"
+    found = [e for e in events if isinstance(e, ev.ScanFound)]
+    assert len(found) == 3
+    assert [e.count for e in found] == [1, 2, 3]
+    assert [e for e in events if isinstance(e, ev.ScanFinished)][-1].total == 3

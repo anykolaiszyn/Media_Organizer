@@ -54,3 +54,11 @@ class ScanFound:
 @dataclass(frozen=True)
 class ScanFinished:
     total: int
+
+
+@dataclass(frozen=True)
+class ExtractionProgress:
+    chunks_done: int
+    chunks_total: int
+    files_done: int
+    files_total: int

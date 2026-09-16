@@ -4,40 +4,43 @@ import atexit
 import os
 from collections import Counter
 from .scanner import scan_media_files
-from .organizer import organize_files, get_organize_preview
+from .organizer import organize_files
 from .logger import logger
 from .batch_results_db import BatchResultsDB
 from .memory_monitor import MemoryMonitor, check_dataset_size_and_warn
 from .utils import check_source_dest_overlap
 from .batch_events import (
     Scanned, FileStarted, FileDone, LogLine, Finished,
+    ScanProgress, ScanFound, ScanFinished,
 )
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 class MediaOrganizerController:
-    def __init__(self, log_callback=None, progress_callback=None):
-        self.log_callback = log_callback or (lambda msg: None)
-        self.progress_callback = progress_callback or (lambda pct: None)
+    def __init__(self):
         self.cancel_flag = False
         self._lock = threading.Lock()
         self.batch_db = None
-        # Clean up old temp DBs on app exit
         atexit.register(BatchResultsDB.cleanup_old_temp_dbs)
 
-    def scan_media_files_async(self, source, formats=None, progress_callback=None, found_callback=None, done_callback=None):
-        """Scan files in a background thread, reporting progress and found files to the UI."""
+    def scan_media_files_async(self, source, formats=None, emit=None):
+        """Scan in a background thread, publishing events. Returns immediately."""
+        emit = emit or (lambda event: None)
         from .scanner import scan_media_files_iter
         self.cancel_flag = False
-        def cancel():
-            return self.cancel_flag
+
         def worker():
-            for f in scan_media_files_iter(source, formats=formats, progress_callback=progress_callback, cancel_flag=cancel):
-                if found_callback:
-                    found_callback(f)
-            if done_callback:
-                done_callback()
-        t = threading.Thread(target=worker, daemon=True)
-        t.start()
+            found = 0
+            for path in scan_media_files_iter(
+                source,
+                formats=formats,
+                progress_callback=lambda pct: emit(ScanProgress(pct)),
+                cancel_flag=lambda: self.cancel_flag,
+            ):
+                found += 1
+                emit(ScanFound(path, found))
+            emit(ScanFinished(found))
+
+        threading.Thread(target=worker, daemon=True).start()
 
     @staticmethod
     def _resolve_max_workers(requested):
@@ -145,30 +148,6 @@ class MediaOrganizerController:
 
         emit(Finished(dict(counts), self.cancel_flag, time.time() - start_time))
 
-    def get_preview_list(self, source, dest, tag_order=None, formats=None, progress_callback=None, cancel_flag=None):
-        """
-        Returns (preview_list, skipped_list):
-        preview_list: list of (source, dest) tuples
-        skipped_list: list of (source, reason) tuples
-        progress_callback: function(percent) to update progress bar
-        cancel_flag: threading.Event or similar, set to cancel
-        """
-        files = scan_media_files(source, formats=formats)
-        total = len(files)
-        preview = []
-        skipped = []
-        for idx, file in enumerate(files):
-            if cancel_flag and cancel_flag.is_set():
-                self._log("Preview cancelled by user.")
-                break
-            # get_organize_preview expects a list, returns (preview, skipped)
-            p, s = get_organize_preview([file], dest, tag_order=tag_order)
-            preview.extend(p)
-            skipped.extend(s)
-            if progress_callback:
-                progress_callback(100 * (idx + 1) / total if total else 100)
-        return preview, skipped
-
     def cancel(self):
         self.cancel_flag = True
         # Attempt to cancel ExifTool if running
@@ -176,11 +155,4 @@ class MediaOrganizerController:
             from .metadata_extractor import cancel_exiftool
             cancel_exiftool()
         except Exception as e:
-            self._log(f"[CANCEL] Error attempting to cancel ExifTool: {e}")
-
-    def _log(self, message):
-        logger.info(message)
-        self.log_callback(message)
-
-    def _progress(self, percent):
-        self.progress_callback(percent)
+            logger.info(f"[CANCEL] Error attempting to cancel ExifTool: {e}")
