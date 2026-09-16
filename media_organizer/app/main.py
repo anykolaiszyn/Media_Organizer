@@ -107,45 +107,57 @@ class MediaOrganizerApp:
         load_page()
 
     def scan_files_dialog(self):
-        import tkinter as tk
-        from tkinter import Toplevel, Label, Button, scrolledtext, messagebox
+        from tkinter import Toplevel, Label, Button
         win = Toplevel(self.root)
         win.title("Scanning Files")
         win.geometry("500x300")
         progress_var = tk.DoubleVar(value=0)
-        progress = ttk.Progressbar(win, variable=progress_var, maximum=100)
-        progress.pack(fill='x', padx=10, pady=10)
+        ttk.Progressbar(win, variable=progress_var, maximum=100).pack(
+            fill='x', padx=10, pady=10)
         found_label = Label(win, text="Files found: 0")
         found_label.pack(padx=10, anchor='w')
         st = scrolledtext.ScrolledText(win, width=60, height=10)
         st.pack(padx=10, pady=5, fill='both', expand=True)
-        cancel_btn = Button(win, text="Cancel", command=win.destroy)
+        cancel_btn = Button(win, text="Cancel")
         cancel_btn.pack(pady=5)
-        found_files = []
-        cancelled = [False]
-        def on_progress(pct):
-            progress_var.set(pct)
-        def on_found(f):
-            found_files.append(f)
-            found_label.config(text=f"Files found: {len(found_files)}")
-            if len(found_files) <= 100:
-                st.insert('end', f + '\n')
-            if len(found_files) == 100:
-                st.insert('end', '... (showing first 100)\n')
-        def on_done():
-            progress_var.set(100)
-            cancel_btn.config(text="Close")
-        def cancel():
-            cancelled[0] = True
+
+        events = queue.Queue()
+        state = {'open': True}
+
+        def close():
+            state['open'] = False
+            self.controller.cancel()
             win.destroy()
-        cancel_btn.config(command=cancel)
+
+        cancel_btn.config(command=close)
+        win.protocol("WM_DELETE_WINDOW", close)
+
+        def pump():
+            if not state['open']:
+                return
+            try:
+                while True:
+                    event = events.get_nowait()
+                    if isinstance(event, ev.ScanProgress):
+                        progress_var.set(event.percent)
+                    elif isinstance(event, ev.ScanFound):
+                        found_label.config(text=f"Files found: {event.count}")
+                        if event.count <= 100:
+                            st.insert('end', event.path + '\n')
+                        elif event.count == 101:
+                            st.insert('end', '... (showing first 100)\n')
+                    elif isinstance(event, ev.ScanFinished):
+                        progress_var.set(100)
+                        found_label.config(text=f"Files found: {event.total}")
+                        cancel_btn.config(text="Close")
+                        return
+            except queue.Empty:
+                pass
+            win.after(100, pump)
+
         self.controller.scan_media_files_async(
-            self.source_var.get(),
-            formats=None,
-            progress_callback=on_progress,
-            found_callback=on_found,
-            done_callback=on_done
-        )
+            self.source_var.get(), formats=None, emit=events.put)
+        win.after(100, pump)
         win.transient(self.root)
         win.grab_set()
         win.wait_window()

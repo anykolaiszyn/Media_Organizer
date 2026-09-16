@@ -52,3 +52,26 @@ def test_log_lines_reach_the_log_widget(app):
     app._pump_batch_events()
 
     assert 'hello from the worker' in app.log_window.get('1.0', 'end')
+
+
+def test_scan_dialog_uses_a_queue_not_direct_callbacks(app, monkeypatch):
+    """scan_media_files_async must be handed an emit, never widget callbacks."""
+    captured = {}
+
+    def fake_async(source, formats=None, emit=None):
+        captured['emit'] = emit
+        captured['source'] = source
+
+    monkeypatch.setattr(app.controller, 'scan_media_files_async', fake_async)
+    # scan_files_dialog imports Toplevel locally, so there is no module-level
+    # name to patch. Patch the real tkinter class instead: wait_window() runs
+    # its own nested Tcl event loop and blocks until the window is destroyed
+    # regardless of whether mainloop() was ever called, so leaving it
+    # unpatched would hang this test forever.
+    monkeypatch.setattr(tk.Toplevel, 'wait_window', lambda self: None)
+    app.source_var.set('C:/photos')
+
+    app.scan_files_dialog()
+
+    assert callable(captured['emit'])
+    assert captured['source'] == 'C:/photos'
