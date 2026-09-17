@@ -41,12 +41,15 @@ class MediaOrganizerApp:
         page_size = 100
         page_var = tk.IntVar(value=0)
         results = []
+        db = self.controller.batch_db
+        total_results = db.count_results() if db is not None else 0
+        total_pages = max(1, (total_results + page_size - 1) // page_size)
+
         def load_page():
             st.config(state='normal')
             st.delete('1.0', 'end')
             offset = page_var.get() * page_size
             results.clear()
-            db = self.controller.batch_db
             if db is not None:
                 rows = db.fetch_results(limit=page_size, offset=offset)
                 for row in rows:
@@ -57,15 +60,19 @@ class MediaOrganizerApp:
                         line += f" | ERROR: {error}"
                     st.insert('end', line + '\n')
             st.config(state='disabled')
-            page_label.config(text=f"Page {page_var.get()+1}")
+            page_label.config(text=f"Page {page_var.get()+1} of {total_pages}")
+            prev_btn.config(state='normal' if page_var.get() > 0 else 'disabled')
+            next_btn.config(state='normal' if page_var.get() < total_pages - 1 else 'disabled')
 
         st = scrolledtext.ScrolledText(win, width=110, height=18)
         st.pack(padx=10, pady=5)
 
         nav_frame = tk.Frame(win)
         nav_frame.pack(pady=2)
-        prev_btn = Button(nav_frame, text="Previous", command=lambda: (page_var.set(max(0, page_var.get()-1)), load_page()))
-        next_btn = Button(nav_frame, text="Next", command=lambda: (page_var.set(page_var.get()+1), load_page()))
+        prev_btn = Button(nav_frame, text="Previous",
+                          command=lambda: (page_var.set(max(0, page_var.get()-1)), load_page()))
+        next_btn = Button(nav_frame, text="Next",
+                          command=lambda: (page_var.set(min(total_pages - 1, page_var.get()+1)), load_page()))
         page_label = Label(nav_frame, text="Page 1")
         prev_btn.pack(side='left', padx=2)
         page_label.pack(side='left', padx=2)
@@ -620,12 +627,15 @@ class MediaOrganizerApp:
         page_size = 100
         page_var = tk.IntVar(value=0)
         results = []
+        db = self.controller.batch_db
+        total_results = db.count_results() if db is not None else 0
+        total_pages = max(1, (total_results + page_size - 1) // page_size)
+
         def load_page():
             st.config(state='normal')
             st.delete('1.0', 'end')
             offset = page_var.get() * page_size
             results.clear()
-            db = self.controller.batch_db
             if db is not None:
                 rows = db.fetch_results(limit=page_size, offset=offset)
                 for row in rows:
@@ -636,15 +646,19 @@ class MediaOrganizerApp:
                         line += f" | ERROR: {error}"
                     st.insert('end', line + '\n')
             st.config(state='disabled')
-            page_label.config(text=f"Page {page_var.get()+1}")
+            page_label.config(text=f"Page {page_var.get()+1} of {total_pages}")
+            prev_btn.config(state='normal' if page_var.get() > 0 else 'disabled')
+            next_btn.config(state='normal' if page_var.get() < total_pages - 1 else 'disabled')
 
         st = scrolledtext.ScrolledText(win, width=90, height=15)
         st.pack(padx=10, pady=5)
 
         nav_frame = tk.Frame(win)
         nav_frame.pack(pady=2)
-        prev_btn = Button(nav_frame, text="Previous", command=lambda: (page_var.set(max(0, page_var.get()-1)), load_page()))
-        next_btn = Button(nav_frame, text="Next", command=lambda: (page_var.set(page_var.get()+1), load_page()))
+        prev_btn = Button(nav_frame, text="Previous",
+                          command=lambda: (page_var.set(max(0, page_var.get()-1)), load_page()))
+        next_btn = Button(nav_frame, text="Next",
+                          command=lambda: (page_var.set(min(total_pages - 1, page_var.get()+1)), load_page()))
         page_label = Label(nav_frame, text="Page 1")
         prev_btn.pack(side='left', padx=2)
         page_label.pack(side='left', padx=2)

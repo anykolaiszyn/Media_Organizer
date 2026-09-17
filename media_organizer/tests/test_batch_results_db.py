@@ -28,3 +28,15 @@ def test_batch_results_db_cleanup():
     # Run cleanup
     BatchResultsDB.cleanup_old_temp_dbs()
     assert not os.path.exists(test_db_path)
+
+def test_count_results_matches_what_was_inserted(tmp_path):
+    from media_organizer.app.batch_results_db import BatchResultsDB
+
+    db = BatchResultsDB(db_path=str(tmp_path / 'test.sqlite3'))
+    assert db.count_results() == 0
+
+    for i in range(7):
+        db.insert_result(f'file{i}.jpg', 'copy', 'done', {})
+
+    assert db.count_results() == 7
+    db.close()

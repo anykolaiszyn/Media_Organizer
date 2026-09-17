@@ -40,6 +40,11 @@ class BatchResultsDB:
         c.execute("SELECT filename, action, status, metadata, error FROM results LIMIT ? OFFSET ?", (limit, offset))
         return c.fetchall()
 
+    def count_results(self):
+        c = self.conn.cursor()
+        c.execute("SELECT COUNT(*) FROM results")
+        return c.fetchone()[0]
+
     def clear(self):
         c = self.conn.cursor()
         c.execute("DELETE FROM results")
