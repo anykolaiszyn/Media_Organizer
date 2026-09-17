@@ -1,8 +1,15 @@
 
 # build_exe.ps1
 # PowerShell script to build the media_organizer executable and output to a custom folder
+# Run from the repository root: ./media_organizer/build_exe.ps1
 
-$ErrorActionPreference = 'Stop'
+# Deliberately not 'Stop': PyInstaller writes normal INFO-level progress to
+# stderr, and PowerShell 5.1 treats a native command's stderr as a
+# terminating error under $ErrorActionPreference = 'Stop' even on exit 0 --
+# that combination previously made this script abort mid-build with no
+# real failure. Removal failures below are still handled via explicit
+# -ErrorAction Stop + try/catch, and a bad PyInstaller exit code is checked
+# explicitly after the call.
 
 # Set output directory
 $outputDir = "build_output"
@@ -36,8 +43,14 @@ function Remove-BuildOutput {
 }
 Remove-BuildOutput $outputDir
 
-# Run PyInstaller with the spec file in the project root
-pyinstaller --distpath $outputDir --workpath .pyi_build --clean media_organizer.spec
+# Run PyInstaller with the spec file in the project root.
+# Invoked as "python -m PyInstaller" rather than the bare "pyinstaller"
+# command, since the latter depends on its console-script shim being on
+# PATH, which isn't guaranteed on every machine that has the package installed.
+python -m PyInstaller --distpath $outputDir --workpath .pyi_build --clean media_organizer.spec
+if ($LASTEXITCODE -ne 0) {
+    throw "PyInstaller exited with code $LASTEXITCODE"
+}
 
 # Copy the entire ExifTool folder (including all DLLs, Perl files, and subfolders) to the output directory
 $exiftoolFolderSource = Join-Path $PSScriptRoot "ExifTool"

@@ -1,2 +1,2 @@
-tk
 psutil>=5.8.0
+pyinstaller>=6.0

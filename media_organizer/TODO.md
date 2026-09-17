@@ -24,11 +24,6 @@
 - **Cross-platform testing.** The app and its tests currently assume Windows (hidden-window subprocess flags, `%TEMP%`-based paths, the PyInstaller build targets Windows only). Linux/macOS behavior is unverified.
 - **Installer/portable ZIP** for the EXE build, beyond the raw `build_output/` folder.
 
-### Housekeeping
-
-- The repo tracks its own build output and Python bytecode cache (`.pyi_build/`, `build_output/`, `__pycache__/*.pyc`) despite a `.gitignore` — every local build or test run shows these as "modified" even though nothing source-level changed. Worth untracking and confirming `.gitignore` actually excludes the right paths.
-- `requirements.txt` lists `tk`, which is an unrelated PyPI package, not stdlib Tkinter (which needs no separate install on Windows). Should list `psutil` and, if PyInstaller builds are expected to work from a fresh checkout, `pyinstaller`.
-
 ## Won't fix / not planned
 
 - Docker support was explored early in the project's history and deliberately dropped in favor of a local-first, standalone-EXE distribution model. Don't reintroduce it without discussing first.
