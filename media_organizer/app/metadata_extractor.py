@@ -4,212 +4,185 @@ from .logger import log
 import json
 import subprocess
 import sys
-from media_organizer.app.exiftool_check import get_exiftool_path
 import threading
+from media_organizer.app.exiftool_check import get_exiftool_path
+from media_organizer.app.batch_events import ExtractionProgress
 
-# Track all ExifTool processes globally for robust cleanup
-_exiftool_procs = set()
-_exiftool_lock = threading.Lock()
+_current_chunk_process = None
+_current_chunk_process_lock = threading.Lock()
 
-def _register_exiftool_process(proc):
-    with _exiftool_lock:
-        _exiftool_procs.add(proc)
-
-def _unregister_exiftool_process(proc):
-    with _exiftool_lock:
-        _exiftool_procs.discard(proc)
 
 def cancel_exiftool():
-    with _exiftool_lock:
-        for proc in list(_exiftool_procs):
-            if proc:
-                terminated = False
-                if hasattr(proc, 'terminate'):
-                    try:
-                        proc.terminate()
-                        log('[CANCEL] ExifTool process terminated by user.')
-                        terminated = True
-                    except Exception as e:
-                        log(f'[CANCEL] Failed to terminate ExifTool process: {e}')
-                # On Windows, .terminate() may not always work; try .kill() as fallback
-                if not terminated and hasattr(proc, 'kill'):
-                    try:
-                        proc.kill()
-                        log('[CANCEL] ExifTool process force-killed by user.')
-                    except Exception as e:
-                        log(f'[CANCEL] Failed to force-kill ExifTool process: {e}')
-            _exiftool_procs.discard(proc)
+    global _current_chunk_process
+    with _current_chunk_process_lock:
+        proc = _current_chunk_process
+    if proc is None:
+        return
+    try:
+        proc.terminate()
+        log('[CANCEL] ExifTool process terminated by user.')
+    except Exception as e:
+        log(f'[CANCEL] Failed to terminate ExifTool process: {e}')
+        try:
+            proc.kill()
+            log('[CANCEL] ExifTool process force-killed by user.')
+        except Exception as e2:
+            log(f'[CANCEL] Failed to force-kill ExifTool process: {e2}')
+
+
+def _startupinfo():
+    if not sys.platform.startswith('win'):
+        return None
+    info = subprocess.STARTUPINFO()
+    info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    info.wShowWindow = subprocess.SW_HIDE
+    return info
+
+
+def _run_chunk(paths, timeout):
+    """One ExifTool invocation over `paths`. Returns (json_text_or_None, error_dict_or_None)."""
+    global _current_chunk_process
+    exiftool_path = get_exiftool_path()
+    if not Path(exiftool_path).exists():
+        msg = f"ExifTool executable not found at {exiftool_path}"
+        return None, {"error": msg, "type": "missing_exiftool"}
+
+    cmd = [exiftool_path, '-j', '-G', '-a', '-s'] + list(paths)
+    proc = subprocess.Popen(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        startupinfo=_startupinfo(),
+    )
+    with _current_chunk_process_lock:
+        _current_chunk_process = proc
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        try:
+            # Drain any buffered output so the pipes don't leak. Best-effort:
+            # a second failure here doesn't change the outcome, which is
+            # already "timeout" either way.
+            proc.communicate()
+        except Exception:
+            pass
+        msg = f"ExifTool timed out extracting {len(paths)} file(s)"
+        return None, {"error": msg, "type": "timeout"}
+    finally:
+        with _current_chunk_process_lock:
+            _current_chunk_process = None
+
+    if proc.returncode != 0:
+        msg = stderr.strip() if stderr else f"ExifTool exited with code {proc.returncode}"
+        return None, {"error": f"ExifTool returned error: {msg}", "type": "exiftool_error"}
+
+    return stdout, None
+
+
+def _extract_chunk(paths, timeout, results):
+    """Extract `paths` as one chunk, bisecting into results on failure."""
+    stdout, error = _run_chunk(paths, timeout)
+    if error is not None:
+        if len(paths) == 1:
+            results[paths[0]] = error
+            return
+        mid = len(paths) // 2
+        _extract_chunk(paths[:mid], timeout, results)
+        _extract_chunk(paths[mid:], timeout, results)
+        return
+
+    try:
+        entries = json.loads(stdout)
+    except json.JSONDecodeError as e:
+        if len(paths) == 1:
+            results[paths[0]] = {
+                "error": f"Failed to parse ExifTool JSON output: {e}",
+                "type": "json_parse_error",
+            }
+            return
+        mid = len(paths) // 2
+        _extract_chunk(paths[:mid], timeout, results)
+        _extract_chunk(paths[mid:], timeout, results)
+        return
+
+    by_source = {entry.get("SourceFile"): entry for entry in entries}
+    for p in paths:
+        if p in by_source:
+            results[p] = by_source[p]
+        else:
+            results[p] = {"error": "ExifTool returned no entry for this file",
+                          "type": "exiftool_error"}
+
+
+def extract_metadata_batch(file_paths, chunk_size=None, emit=None):
+    """Extract metadata for every path in file_paths, one ExifTool call per chunk.
+
+    Returns {path: metadata_dict_or_error_dict}. A chunk that fails outright
+    (bad exit, timeout, unparseable JSON) is bisected until the one bad file
+    is isolated as a per-file error; every other file in that chunk still
+    gets a real result.
+    """
+    import os
+    if chunk_size is None:
+        try:
+            chunk_size = int(os.environ.get('MEDIA_ORGANIZER_CHUNK_SIZE', 200))
+        except (ValueError, TypeError):
+            chunk_size = 200
+    chunk_size = max(1, chunk_size)
+
+    file_paths = [str(p) for p in file_paths]
+    chunks = [file_paths[i:i + chunk_size] for i in range(0, len(file_paths), chunk_size)]
+    results = {}
+    files_done = 0
+
+    for i, chunk in enumerate(chunks):
+        timeout = 10 + 0.5 * len(chunk)
+        _extract_chunk(chunk, timeout, results)
+        files_done += len(chunk)
+        if emit:
+            emit(ExtractionProgress(
+                chunks_done=i + 1, chunks_total=len(chunks),
+                files_done=files_done, files_total=len(file_paths),
+            ))
+
+    return results
+
 
 def extract_metadata(file_path):
-    """
-    Extract all metadata from a file using the exiftool executable. Returns a dict of tag: value.
-    """
-    file_path = str(Path(file_path))
-    exiftool_path = get_exiftool_path()
-    from pathlib import Path as _Path
-    debug_msg = f"[DEBUG] extract_metadata called for {file_path}\n[DEBUG] exiftool_path: {exiftool_path}"
-    if not _Path(exiftool_path).exists():
-        return {"error": f"ExifTool executable not found at {exiftool_path}", "debug": debug_msg}
-    
-    try:
-        log(f"[DEBUG] Calling ExifTool executable for {file_path}")
-        
-        # Call exiftool with JSON output (headless on Windows)
-        cmd = [exiftool_path, '-j', '-G', '-a', '-s', file_path]
-        startupinfo = None
-        if sys.platform.startswith('win'):
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = subprocess.SW_HIDE
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, startupinfo=startupinfo)
-        
-        if result.returncode != 0:
-            error_msg = result.stderr.strip() if result.stderr else "Unknown error"
-            return {"error": f"ExifTool returned error: {error_msg}", "debug": debug_msg, "type": "exiftool_error"}
-        
-        # Parse JSON output
-        try:
-            metadata_list = json.loads(result.stdout)
-            if metadata_list and len(metadata_list) > 0:
-                metadata = metadata_list[0]  # ExifTool returns a list, take first item
-            else:
-                metadata = {}
-        except json.JSONDecodeError as e:
-            return {"error": f"Failed to parse ExifTool JSON output: {e}", "debug": debug_msg, "type": "json_parse_error"}
-        
-        log(f"[DEBUG] ExifTool returned: {len(metadata)} metadata tags")
-        if not metadata:
-            return {"error": "No metadata returned.", "debug": debug_msg, "type": "no_metadata"}
-        return metadata
-    except subprocess.TimeoutExpired:
-        msg = f"ExifTool timed out for {file_path}. The file may be corrupt or too large."
-        log(f"[ERROR] {msg}")
-        return {"error": msg, "debug": debug_msg, "type": "timeout"}
-    except FileNotFoundError:
-        msg = f"ExifTool executable not found at {exiftool_path}. Please check your installation."
-        log(f"[ERROR] {msg}")
-        return {"error": msg, "debug": debug_msg, "type": "missing_exiftool"}
-    except Exception as e:
-        msg = f"Unexpected error in extract_metadata for {file_path}: {e}"
-        import traceback
-        tb = traceback.format_exc()
-        log(f"[ERROR] {msg}\n{tb}")
-        return {"error": msg, "debug": debug_msg, "type": "unexpected"}
+    """Single-file extraction, for the interactive Metadata Viewer tab."""
+    path = str(file_path)
+    return extract_metadata_batch([path], chunk_size=1)[path]
 
-def extract_datetime_with_tags(tags, file_path):
-    file_path = str(Path(file_path))
-    exiftool_path = get_exiftool_path()
-    try:
-        # Call exiftool with JSON output (headless on Windows)
-        cmd = [exiftool_path, '-j', '-G', '-a', '-s', file_path]
-        startupinfo = None
-        if sys.platform.startswith('win'):
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = subprocess.SW_HIDE
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, startupinfo=startupinfo)
-        
-        if result.returncode != 0:
-            log(f"ExifTool error for {file_path}: {result.stderr}")
-            return None, None
-            
-        # Parse JSON output
-        try:
-            metadata_list = json.loads(result.stdout)
-            meta = metadata_list[0] if metadata_list else {}
-        except json.JSONDecodeError:
-            log(f"Failed to parse ExifTool JSON for {file_path}")
-            return None, None
-            
-        for tag in tags:
-            # Try both raw and group-prefixed keys
-            if tag in meta:
-                log(f"Extracted {tag} for {file_path}: {meta[tag]}")
-                return meta[tag], tag
-            for k in meta:
-                if k.lower().endswith(tag.lower()):
-                    log(f"Extracted {k} for {file_path}: {meta[k]}")
-                    return meta[k], k
-    except subprocess.TimeoutExpired:
-        log(f"ExifTool timeout for {file_path}")
-    except FileNotFoundError as e:
-        log(f"ExifTool executable not found for {file_path}: {e}")
-    except PermissionError as e:
-        log(f"Permission error accessing {file_path}: {e}")
-    except Exception as e:
-        log(f"Unexpected ExifTool error for {file_path}: {e}")
-        # Log traceback in debug mode
-        import os
-        if os.environ.get('MEDIA_ORGANIZER_DEBUG'):
-            import traceback
-            log(f"Traceback: {traceback.format_exc()}")
-    log(f"No valid datetime found for {file_path}")
-    return None, None
 
-def extract_datetime(file_path, tags=None):
-    # Default order if not specified
+def _key_matches_tag(key, tag):
+    if key == tag:
+        return True
+    if ':' in key and key.rsplit(':', 1)[-1] == tag:
+        return True
+    return False
+
+
+def select_datetime(metadata, tags=None):
+    """First tag in priority order that has a value in `metadata`, or None."""
     if tags is None:
-        tags = [
-            'DateTimeOriginal',
-            'CreateDate',
-            'MediaCreateDate'
-        ]
-    value, _ = extract_datetime_with_tags(tags, file_path)
-    return value
-
-def extract_earliest_datetime(file_path, tags=None):
-    """
-    Returns the earliest valid date string found among the given tags in the file's metadata.
-    If no valid date is found, returns None.
-    """
-    from .utils import parse_exif_date
-    file_path = str(Path(file_path))
-    exiftool_path = get_exiftool_path()
-    try:
-        # Call exiftool with JSON output (headless on Windows)
-        cmd = [exiftool_path, '-j', '-G', '-a', '-s', file_path]
-        startupinfo = None
-        if sys.platform.startswith('win'):
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = subprocess.SW_HIDE
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, startupinfo=startupinfo)
-        
-        if result.returncode != 0:
-            log(f"ExifTool error for {file_path} (earliest): {result.stderr}")
-            return None
-            
-        # Parse JSON output
-        try:
-            metadata_list = json.loads(result.stdout)
-            meta = metadata_list[0] if metadata_list else {}
-        except json.JSONDecodeError:
-            log(f"Failed to parse ExifTool JSON for {file_path} (earliest)")
-            return None
-            
-        found_dates = []
-        for tag in tags or []:
-            # Try both raw and group-prefixed keys
-            if tag in meta:
-                dt = parse_exif_date(meta[tag])
-                if dt:
-                    found_dates.append((dt, meta[tag], tag))
-            for k in meta:
-                if k.lower().endswith(tag.lower()):
-                    dt = parse_exif_date(meta[k])
-                    if dt:
-                        found_dates.append((dt, meta[k], k))
-        if found_dates:
-            found_dates.sort(key=lambda x: x[0])  # sort by datetime
-            log(f"[EARLIEST] {file_path}: {found_dates[0][1]} from {found_dates[0][2]}")
-            return found_dates[0][1]  # return the date string
-    except subprocess.TimeoutExpired:
-        log(f"ExifTool timeout for {file_path} (earliest)")
-    except FileNotFoundError as e:
-        log(f"ExifTool executable not found for {file_path} (earliest): {e}")
-    except Exception as e:
-        log(f"Unexpected ExifTool error for {file_path} (earliest): {e}")
-        # Log traceback in debug mode
-        import traceback
-        log(f"[DEBUG] {traceback.format_exc()}")
+        tags = ['DateTimeOriginal', 'CreateDate', 'MediaCreateDate']
+    for tag in tags:
+        for key, value in metadata.items():
+            if _key_matches_tag(key, tag):
+                return value
     return None
+
+
+def select_earliest_datetime(metadata, tags=None):
+    """Earliest valid date among all matches for `tags` in `metadata`, or None."""
+    from .utils import parse_exif_date
+    found = []
+    for tag in tags or []:
+        for key, value in metadata.items():
+            if _key_matches_tag(key, tag):
+                dt = parse_exif_date(value)
+                if dt:
+                    found.append((dt, value))
+    if not found:
+        return None
+    found.sort(key=lambda pair: pair[0])
+    return found[0][1]
