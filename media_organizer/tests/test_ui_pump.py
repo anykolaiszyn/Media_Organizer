@@ -1,4 +1,6 @@
 """The pump turns events into widget state, on the main thread."""
+import json
+import os
 import queue
 import tkinter as tk
 
@@ -95,3 +97,86 @@ def test_scan_dialog_uses_a_queue_not_direct_callbacks(app, monkeypatch):
 
     assert callable(captured['emit'])
     assert captured['source'] == 'C:/photos'
+
+
+def _destroy_children(root):
+    for child in list(root.children.values()):
+        child.destroy()
+
+
+def test_save_then_reload_restores_tag_order_and_filters(root, tmp_path, monkeypatch):
+    """Tag order, "use earliest," and the file-type filters round-trip through
+    a real config file across a simulated restart.
+
+    include_images/include_videos are the interesting case: they don't exist
+    yet when load_last_folders() runs (it runs right after self.tag_vars is
+    built, long before the widget-construction block creates those two
+    vars), so load_last_folders() can't call .set() on them directly -- it
+    stashes the parsed config on self._loaded_settings instead, and their
+    *initial value* is seeded from that dict at construction time.
+    Constructing a second, independent MediaOrganizerApp against the same
+    config file (simulating a real restart) is what actually exercises that
+    seeding path -- a regression back to a direct .set() call inside
+    load_last_folders would be silently swallowed by its broad
+    `except Exception: pass` and would show up here as include_images/
+    include_videos staying at their True default instead of the saved
+    value.
+    """
+    config_home = tmp_path / "home1"
+    config_home.mkdir()
+    monkeypatch.setattr(os.path, 'expanduser', lambda p: str(config_home))
+
+    app = MediaOrganizerApp(root)
+    try:
+        app.source_var.set('C:/from')
+        app.dest_var.set('C:/to')
+        reordered = list(reversed([v.get() for v in app.tag_vars]))
+        for var, tag in zip(app.tag_vars, reordered):
+            var.set(tag)
+        app.use_earliest_date.set(True)
+        app.include_images.set(False)
+        app.include_videos.set(False)
+
+        app.save_last_folders()
+
+        config_path = app.config_path
+        assert os.path.exists(config_path)
+        with open(config_path) as f:
+            saved = json.load(f)
+        assert saved['tag_order'] == reordered
+        assert saved['use_earliest'] is True
+        assert saved['include_images'] is False
+        assert saved['include_videos'] is False
+        assert saved['source'] == 'C:/from'
+        assert saved['dest'] == 'C:/to'
+    finally:
+        _destroy_children(root)
+
+    # Construct a fresh app against the same config file, simulating a real
+    # restart.
+    app2 = MediaOrganizerApp(root)
+    try:
+        assert app2.source_var.get() == 'C:/from'
+        assert app2.dest_var.get() == 'C:/to'
+        assert [v.get() for v in app2.tag_vars] == reordered
+        assert app2.use_earliest_date.get() is True
+        assert app2.include_images.get() is False
+        assert app2.include_videos.get() is False
+    finally:
+        _destroy_children(root)
+
+
+def test_missing_config_file_leaves_defaults_and_loaded_settings_a_dict(root, tmp_path, monkeypatch):
+    config_home = tmp_path / "home2"
+    config_home.mkdir()
+    monkeypatch.setattr(os.path, 'expanduser', lambda p: str(config_home))
+
+    app = MediaOrganizerApp(root)
+    try:
+        # No config file exists yet in this fresh temp home directory.
+        assert app._loaded_settings == {}
+        assert app.include_images.get() is True
+        assert app.include_videos.get() is True
+        assert app.use_earliest_date.get() is False
+    finally:
+        _destroy_children(root)

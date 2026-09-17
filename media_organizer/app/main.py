@@ -311,8 +311,8 @@ class MediaOrganizerApp:
         # Add color tags for log window
         self.log_window.tag_config('error', foreground='red')
         self.log_window.tag_config('warning', foreground='orange')
-        self.include_images = tk.BooleanVar(value=True)
-        self.include_videos = tk.BooleanVar(value=True)
+        self.include_images = tk.BooleanVar(value=self._loaded_settings.get('include_images', True))
+        self.include_videos = tk.BooleanVar(value=self._loaded_settings.get('include_videos', True))
         filter_frame = tk.Frame(self.org_frame)
         filter_frame.grid(row=9, column=0, columnspan=3, sticky='w')
         tk.Label(filter_frame, text="File types:").pack(side='left')
@@ -452,7 +452,11 @@ class MediaOrganizerApp:
     def save_last_folders(self):
         data = {
             'source': self.source_var.get(),
-            'dest': self.dest_var.get()
+            'dest': self.dest_var.get(),
+            'tag_order': [v.get() for v in self.tag_vars],
+            'use_earliest': self.use_earliest_date.get(),
+            'include_images': self.include_images.get(),
+            'include_videos': self.include_videos.get(),
         }
         try:
             with open(self.config_path, 'w') as f:
@@ -461,11 +465,19 @@ class MediaOrganizerApp:
             pass
 
     def load_last_folders(self):
+        self._loaded_settings = {}
         try:
             with open(self.config_path) as f:
                 data = json.load(f)
+            self._loaded_settings = data
             self.source_var.set(data.get('source', ''))
             self.dest_var.set(data.get('dest', ''))
+            saved_tags = data.get('tag_order')
+            if saved_tags and len(saved_tags) == len(self.tag_vars):
+                for var, tag in zip(self.tag_vars, saved_tags):
+                    var.set(tag)
+            if 'use_earliest' in data:
+                self.use_earliest_date.set(data['use_earliest'])
         except Exception:
             pass
 
@@ -490,6 +502,8 @@ class MediaOrganizerApp:
         if not source or not dest:
             messagebox.showerror("Error", "Please select both source and destination folders.")
             return
+
+        self.save_last_folders()
 
         try:
             check_source_dest_overlap(source, dest)
