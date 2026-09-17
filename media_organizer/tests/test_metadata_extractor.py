@@ -248,3 +248,27 @@ def test_select_earliest_datetime_picks_the_earliest_across_tags():
     result = select_earliest_datetime(metadata, tags=["CreateDate", "TrackCreateDate"])
 
     assert result == "2020:01:01 00:00:00"
+
+
+def test_select_datetime_skips_the_all_zero_placeholder():
+    """ExifTool's all-zero date means 'no date', not a value to select."""
+    metadata = {
+        "EXIF:DateTimeOriginal": "0000:00:00 00:00:00",
+        "EXIF:CreateDate": "2022:06:15 12:00:00",
+    }
+    assert select_datetime(
+        metadata, tags=["DateTimeOriginal", "CreateDate"]) == "2022:06:15 12:00:00"
+
+
+def test_select_datetime_returns_none_when_only_the_placeholder_is_present():
+    metadata = {"EXIF:DateTimeOriginal": "0000:00:00 00:00:00"}
+    assert select_datetime(metadata, tags=["DateTimeOriginal"]) is None
+
+
+def test_select_earliest_datetime_ignores_the_placeholder_among_candidates():
+    metadata = {
+        "EXIF:CreateDate": "0000:00:00 00:00:00",
+        "QuickTime:TrackCreateDate": "2020:01:01 00:00:00",
+    }
+    result = select_earliest_datetime(metadata, tags=["CreateDate", "TrackCreateDate"])
+    assert result == "2020:01:01 00:00:00"

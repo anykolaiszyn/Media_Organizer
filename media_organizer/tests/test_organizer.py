@@ -148,3 +148,14 @@ def test_organize_files_extraction_failure_logs_warning(tmp_path, monkeypatch):
     assert len(warnings) == 1
     assert str(f1) in warnings[0]
     assert "ExifTool timed out extracting 1 file(s)" in warnings[0]
+
+
+def test_a_file_with_only_the_placeholder_date_goes_to_no_metadata_not_unsorted(tmp_path):
+    f1 = tmp_path / 'a.jpg'
+    f1.write_bytes(b'x')
+    metadata = {str(f1): {"EXIF:DateTimeOriginal": "0000:00:00 00:00:00"}}
+
+    organize_files([str(f1)], tmp_path, metadata, operation='copy')
+
+    assert (tmp_path / 'no_metadata' / 'a.jpg').exists()
+    assert not (tmp_path / 'unsorted' / 'a.jpg').exists()

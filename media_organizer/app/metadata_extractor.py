@@ -161,13 +161,16 @@ def _key_matches_tag(key, tag):
     return False
 
 
+_ZERO_DATE_PLACEHOLDERS = {'0000:00:00 00:00:00', '0000:00:00'}
+
+
 def select_datetime(metadata, tags=None):
-    """First tag in priority order that has a value in `metadata`, or None."""
+    """First tag in priority order that has a real value in `metadata`, or None."""
     if tags is None:
         tags = ['DateTimeOriginal', 'CreateDate', 'MediaCreateDate']
     for tag in tags:
         for key, value in metadata.items():
-            if _key_matches_tag(key, tag):
+            if _key_matches_tag(key, tag) and value not in _ZERO_DATE_PLACEHOLDERS:
                 return value
     return None
 
@@ -178,7 +181,7 @@ def select_earliest_datetime(metadata, tags=None):
     found = []
     for tag in tags or []:
         for key, value in metadata.items():
-            if _key_matches_tag(key, tag):
+            if _key_matches_tag(key, tag) and value not in _ZERO_DATE_PLACEHOLDERS:
                 dt = parse_exif_date(value)
                 if dt:
                     found.append((dt, value))
