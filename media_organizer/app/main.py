@@ -90,11 +90,13 @@ class MediaOrganizerApp:
                             break
                         all_rows.extend(rows)
                         offset += page_size
-                with open(file_path, 'w', encoding='utf-8') as f:
-                    f.write('filename,action,status,error\n')
-                    for row in all_rows:
-                        filename, action, status, metadata, error = row
-                        f.write(f'"{filename}","{action}","{status}","{error or ""}"\n')
+                from media_organizer.app.utils import write_csv_safe
+                write_csv_safe(
+                    file_path,
+                    ['filename', 'action', 'status', 'error'],
+                    [(filename, action, status, error)
+                     for filename, action, status, metadata, error in all_rows],
+                )
                 messagebox.showinfo("Export Complete", f"Dry run results exported to:\n{file_path}")
             except Exception as e:
                 messagebox.showerror("Export Failed", f"Could not export dry run results:\n{e}")
@@ -667,12 +669,14 @@ class MediaOrganizerApp:
                             break
                         all_rows.extend(rows)
                         offset += page_size
-                with open(file_path, 'w', encoding='utf-8') as f:
-                    f.write('filename,action,status,error\n')
-                    for row in all_rows:
-                        filename, action, status, metadata, error = row
-                        if error or status == 'error':
-                            f.write(f'"{filename}","{action}","{status}","{error or ""}"\n')
+                from media_organizer.app.utils import write_csv_safe
+                write_csv_safe(
+                    file_path,
+                    ['filename', 'action', 'status', 'error'],
+                    [(filename, action, status, error)
+                     for filename, action, status, metadata, error in all_rows
+                     if error or status == 'error'],
+                )
                 messagebox.showinfo("Export Complete", f"Errors and warnings exported to:\n{file_path}")
             except Exception as e:
                 messagebox.showerror("Export Failed", f"Could not export errors/warnings:\n{e}")

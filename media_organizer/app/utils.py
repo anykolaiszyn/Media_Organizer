@@ -1,5 +1,27 @@
 import filecmp
 from pathlib import Path
+import csv
+
+def write_csv_safe(file_path, header, rows):
+    """Write rows to file_path as CSV.
+
+    Uses the csv module so embedded quotes, commas, and newlines are escaped
+    correctly -- ad-hoc f-string quoting breaks on any of those. Also guards
+    against CSV/spreadsheet formula injection: a cell beginning with =, +,
+    -, or @ is prefixed with a single quote, which Excel and LibreOffice
+    both treat as "this is literal text," not a formula to evaluate.
+    """
+    def sanitize(value):
+        text = '' if value is None else str(value)
+        if text and text[0] in ('=', '+', '-', '@'):
+            return "'" + text
+        return text
+
+    with open(file_path, 'w', encoding='utf-8', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(header)
+        for row in rows:
+            writer.writerow([sanitize(v) for v in row])
 
 def ensure_dir(path):
     """Ensure a directory exists (like mkdir -p)."""
