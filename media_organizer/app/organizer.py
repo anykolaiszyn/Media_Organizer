@@ -5,7 +5,7 @@ import shutil
 import threading
 from uuid import uuid4
 from .logger import logger
-from .metadata_extractor import extract_datetime
+from .metadata_extractor import select_datetime, select_earliest_datetime
 from .utils import ensure_dir, files_identical, parse_exif_date
 
 _MAX_RENAME_ATTEMPTS = 10000
@@ -99,8 +99,9 @@ def _fill_claimed_path(src, candidate, operation):
     if operation == 'move':
         os.remove(src)
 
-def organize_files(files, dest_folder, operation='copy', dry_run=False, tag_order=None, use_earliest=False):
-    """File each path under dest_folder/YYYY/MM by its metadata date.
+def organize_files(files, dest_folder, metadata_by_path, operation='copy', dry_run=False,
+                   tag_order=None, use_earliest=False):
+    """File each path under dest_folder/YYYY/MM using its already-extracted metadata.
 
     Returns a list of (source_path, Placement) so callers can report accurate
     counts instead of inferring them from log text.
@@ -108,7 +109,8 @@ def organize_files(files, dest_folder, operation='copy', dry_run=False, tag_orde
     dest_folder = Path(dest_folder)
     results = []
     for file_path in files:
-        dest_path = _destination_for(file_path, dest_folder, tag_order, use_earliest)
+        metadata = metadata_by_path.get(str(file_path), {})
+        dest_path = _destination_for(file_path, dest_folder, metadata, tag_order, use_earliest)
         try:
             outcome, final_path = place_file(file_path, dest_path, operation, dry_run)
         except Exception as e:
@@ -119,13 +121,12 @@ def organize_files(files, dest_folder, operation='copy', dry_run=False, tag_orde
     return results
 
 
-def _destination_for(file_path, dest_folder, tag_order, use_earliest):
+def _destination_for(file_path, dest_folder, metadata, tag_order, use_earliest):
     """Where this file belongs: a dated folder, or a fallback bucket."""
     if use_earliest:
-        from .metadata_extractor import extract_earliest_datetime
-        date_str = extract_earliest_datetime(file_path, tags=tag_order)
+        date_str = select_earliest_datetime(metadata, tags=tag_order)
     else:
-        date_str = extract_datetime(file_path, tags=tag_order)
+        date_str = select_datetime(metadata, tags=tag_order)
 
     name = Path(file_path).name
     if not date_str:
@@ -142,30 +143,3 @@ def _log_placement(src, final_path, operation, outcome, dry_run):
         logger.info(f"{prefix}skip {src}: identical file already at {final_path}")
     else:
         logger.info(f"{prefix}{operation} {src} -> {final_path}")
-
-def get_organize_preview(files, dest_folder, tag_order=None):
-    """
-    Returns a list of (source, destination) tuples for files that would be organized.
-    Skips files with missing/invalid dates, just like organize_files.
-    """
-    dest_folder = Path(dest_folder)
-    preview = []
-    skipped = []
-    for file_path in files:
-        date_str = extract_datetime(file_path, tags=tag_order)
-        if not date_str:
-            # Preview for no_metadata
-            no_meta_dir = dest_folder / "no_metadata"
-            dest_path = no_meta_dir / Path(file_path).name
-            preview.append((str(file_path), str(dest_path) + " (no metadata)"))
-            continue
-        dt = parse_exif_date(date_str)
-        if not dt:
-            skipped.append((file_path, f'Failed to parse date: {date_str}'))
-            continue
-        year = str(dt.year)
-        month = f"{dt.month:02d}"
-        dest_dir = dest_folder / year / month
-        dest_path = dest_dir / Path(file_path).name
-        preview.append((str(file_path), str(dest_path)))
-    return preview, skipped
