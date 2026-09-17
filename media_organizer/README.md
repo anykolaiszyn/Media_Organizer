@@ -13,6 +13,8 @@ actually the same file — an exact duplicate is skipped, and a genuinely
 different file is kept side-by-side. That means it's safe to run more than
 once on the same folders (e.g. to "top up" after adding new photos).
 
+![Photo & Video Media Organizer main window](docs/screenshot.png)
+
 ## Getting the app
 
 Photo & Video Media Organizer runs as a single Windows program: **`media_organizer.exe`**,
