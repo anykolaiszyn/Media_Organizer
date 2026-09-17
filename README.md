@@ -151,7 +151,7 @@ Windows-specific subprocess/threading details.
 ## Contributing
 
 Bug reports, feature requests, and pull requests are welcome — see
-[`CONTRIBUTING.md`](../CONTRIBUTING.md) at the repository root.
+[`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Support
 
@@ -160,4 +160,4 @@ me a coffee: [buymeacoffee.com/alexnyk](https://buymeacoffee.com/alexnyk).
 
 ## License
 
-Licensed under the [GPL-3.0 License](../LICENSE).
+Licensed under the [GPL-3.0 License](LICENSE).

@@ -10,7 +10,7 @@ A Tkinter desktop app (+ CLI) that organizes photos/videos into `dest/YYYY/MM/` 
 
 The actual application package is nested one level down: **`media_organizer/`** (containing `app/`, `cli.py`, `plugins/`, `tests/`, `ExifTool/`) sits inside this repo root. `media_organizer/` has no `__init__.py` — it's a namespace package — but every import in the codebase is fully qualified as `media_organizer.app.X`. This only resolves when the **repo root** is on `sys.path`, i.e. commands must be run from the repo root, not from inside `media_organizer/`.
 
-The project is Windows EXE + CLI first: the GUI is what gets packaged into the standalone EXE, and the CLI is the headless/automation path. Running from raw Python source is a developer workflow, not the primary distribution path — see `media_organizer/README.md` for the user-facing instructions.
+The project is Windows EXE + CLI first: the GUI is what gets packaged into the standalone EXE, and the CLI is the headless/automation path. Running from raw Python source is a developer workflow, not the primary distribution path — see `README.md` (repo root) for the user-facing instructions.
 
 Docker support was explored early in the project's history and deliberately dropped in favor of this local-first, standalone-EXE distribution model (see `media_organizer/TODO.md`'s "Won't fix" section) — don't reintroduce it without discussing first. A handful of stale historical files (old AI-collaboration prompts, a Dockerfile, ad-hoc debug scripts left over from earlier sessions, a `.bak` file, an empty duplicate `.spec` file) were removed as clutter; nothing in the current codebase depends on them.
 
