@@ -21,16 +21,16 @@ def test_batch_never_exceeds_the_worker_limit(monkeypatch, tmp_path):
         lambda src, formats=None: [str(f) for f in files],
     )
     monkeypatch.setattr(
-        "media_organizer.app.metadata_extractor.extract_metadata",
-        lambda path: {},
+        "media_organizer.app.ui_controller.extract_metadata_batch",
+        lambda paths, chunk_size=None: {p: {} for p in paths},
     )
 
     active = 0
     max_active = 0
     lock = threading.Lock()
 
-    def tracked_organize(files, dest, operation, dry_run=False, tag_order=None,
-                         use_earliest=False):
+    def tracked_organize(files, dest, metadata_by_path, operation, dry_run=False,
+                         tag_order=None, use_earliest=False):
         nonlocal active, max_active
         with lock:
             active += 1

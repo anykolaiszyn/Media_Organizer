@@ -32,12 +32,12 @@ def batch(monkeypatch, tmp_path):
             lambda src, formats=None: paths,
         )
         monkeypatch.setattr(
-            'media_organizer.app.metadata_extractor.extract_metadata',
-            lambda path: {},
+            'media_organizer.app.ui_controller.extract_metadata_batch',
+            lambda paths, chunk_size=None: {p: {} for p in paths},
         )
         by_path = dict(zip(paths, outcomes))
 
-        def fake_organize(files, dest_, operation, dry_run=False, tag_order=None,
+        def fake_organize(files, dest_, metadata_by_path, operation, dry_run=False, tag_order=None,
                           use_earliest=False):
             outcome = by_path[str(files[0])]
             if outcome == 'raise':
@@ -138,8 +138,8 @@ def test_cancel_reports_cancelled_and_short_circuits_remaining_files(batch, monk
     events = []
     seen = itertools.count()
 
-    def cancelling_organize(files, dest_, operation, dry_run=False, tag_order=None,
-                            use_earliest=False):
+    def cancelling_organize(files, dest_, metadata_by_path, operation, dry_run=False,
+                            tag_order=None, use_earliest=False):
         if next(seen) >= 2:
             controller.cancel()
         return [(str(files[0]), Placement.WROTE)]
@@ -197,8 +197,8 @@ def test_cancel_counts_every_actually_cancelled_file(batch, monkeypatch):
     entered = threading.Barrier(max_workers + 1)
     release = threading.Event()
 
-    def blocking_organize(files, dest_, operation, dry_run=False, tag_order=None,
-                          use_earliest=False):
+    def blocking_organize(files, dest_, metadata_by_path, operation, dry_run=False,
+                          tag_order=None, use_earliest=False):
         entered.wait(timeout=5)
         assert release.wait(timeout=5), "test never released blocked workers"
         return [(str(files[0]), Placement.WROTE)]
@@ -245,6 +245,79 @@ def test_nothing_is_emitted_after_finished(batch):
 
     finished_at = [i for i, e in enumerate(events) if isinstance(e, ev.Finished)]
     assert finished_at == [len(events) - 1]
+
+
+def test_large_batches_extract_in_chunks_with_accurate_progress(batch, monkeypatch):
+    """Progress must reflect the OUTER batch position (chunk 2 of 3, 20 of 25
+    files) -- not each extraction call's own view of just its one chunk,
+    which is always trivially '1 of 1' since organize_batch calls
+    extract_metadata_batch once per outer chunk, never once for everything."""
+    monkeypatch.setenv('MEDIA_ORGANIZER_CHUNK_SIZE', '10')
+    source, dest = batch([Placement.WROTE] * 25)
+
+    captured_chunk_calls = []
+
+    def spying_extract(paths, chunk_size=None):
+        captured_chunk_calls.append(len(paths))
+        return {p: {} for p in paths}
+
+    monkeypatch.setattr(
+        'media_organizer.app.ui_controller.extract_metadata_batch', spying_extract)
+
+    events = []
+    controller = MediaOrganizerController()
+    try:
+        controller.organize_batch(
+            source, dest, 'copy', False, None, False, emit=events.append)
+    finally:
+        if controller.batch_db is not None:
+            controller.batch_db.close()
+
+    assert captured_chunk_calls == [10, 10, 5]
+    progress = [e for e in events if isinstance(e, ev.ExtractionProgress)]
+    assert [p.chunks_done for p in progress] == [1, 2, 3]
+    assert [p.chunks_total for p in progress] == [3, 3, 3]
+    assert [p.files_done for p in progress] == [10, 20, 25]
+    assert progress[-1].files_total == 25
+
+
+def test_cancel_during_organize_stops_before_the_next_chunks_extraction(batch, monkeypatch):
+    """Cancel partway through chunk 1's organize phase, not during extraction --
+    the real-world timing this guarantee has to hold for."""
+    monkeypatch.setenv('MEDIA_ORGANIZER_CHUNK_SIZE', '5')
+    source, dest = batch([Placement.WROTE] * 15)
+    controller = MediaOrganizerController()
+
+    extraction_calls = []
+    organize_calls = []
+
+    def spying_extract(paths, chunk_size=None, emit=None):
+        extraction_calls.append(len(paths))
+        return {p: {} for p in paths}
+
+    def organize_and_cancel_partway(files, dest_, metadata_by_path, operation, dry_run=False,
+                                    tag_order=None, use_earliest=False):
+        organize_calls.append(files[0])
+        if len(organize_calls) == 3:  # partway through chunk 1's 5 files
+            controller.cancel()
+        return [(str(files[0]), Placement.WROTE)]
+
+    monkeypatch.setattr(
+        'media_organizer.app.ui_controller.extract_metadata_batch', spying_extract)
+    monkeypatch.setattr(
+        'media_organizer.app.ui_controller.organize_files', organize_and_cancel_partway)
+
+    events = []
+    try:
+        controller.organize_batch(
+            source, dest, 'copy', False, None, False, emit=events.append)
+    finally:
+        if controller.batch_db is not None:
+            controller.batch_db.close()
+
+    assert extraction_calls == [5], "a second chunk's extraction must not start after cancel"
+    finished = [e for e in events if isinstance(e, ev.Finished)][-1]
+    assert finished.cancelled is True
 
 
 def test_async_scan_publishes_found_files_and_a_total(monkeypatch, tmp_path):
