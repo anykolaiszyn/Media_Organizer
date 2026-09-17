@@ -145,3 +145,17 @@ a wired-up mechanism.
 See `CLAUDE.md` at the repository root for the full pipeline walkthrough
 (scanner → metadata extraction → organizer → UI controller → GUI) and the
 Windows-specific subprocess/threading details.
+
+## Contributing
+
+Bug reports, feature requests, and pull requests are welcome — see
+[`CONTRIBUTING.md`](../CONTRIBUTING.md) at the repository root.
+
+## Support
+
+If this app saved you some time and you'd like to support it, you can buy
+me a coffee: [buymeacoffee.com/alexnyk](https://buymeacoffee.com/alexnyk).
+
+## License
+
+Licensed under the [GPL-3.0 License](../LICENSE).

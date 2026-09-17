@@ -1,0 +1,44 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install dependencies
+        run: pip install -r media_organizer/requirements.txt
+
+      - name: Run tests
+        run: python -m pytest
+
+      - name: Build EXE
+        shell: pwsh
+        run: ./media_organizer/build_exe.ps1
+
+      - name: Package release zip
+        shell: pwsh
+        run: |
+          $zipName = "photo-video-media-organizer-${{ github.ref_name }}-windows.zip"
+          Compress-Archive -Path build_output/* -DestinationPath $zipName
+          echo "ZIP_NAME=$zipName" >> $env:GITHUB_ENV
+
+      - name: Create GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create ${{ github.ref_name }} "$env:ZIP_NAME" --title "${{ github.ref_name }}" --generate-notes
