@@ -88,3 +88,63 @@ def test_organize_files_uses_earliest_when_requested(tmp_path):
                    tag_order=["CreateDate", "TrackCreateDate"], use_earliest=True)
 
     assert (tmp_path / '2020' / '01' / 'a.jpg').exists()
+
+
+def test_organize_files_extraction_failure_goes_to_no_metadata(tmp_path):
+    """An error-shaped metadata dict (ExifTool genuinely failed on this file)
+    must land in no_metadata/, not unsorted/, and must not crash."""
+    f1 = tmp_path / 'a.jpg'
+    f1.write_bytes(b'x')
+    metadata = {str(f1): {
+        "error": "ExifTool timed out extracting 1 file(s)",
+        "type": "timeout",
+    }}
+
+    organize_files([str(f1)], tmp_path, metadata, operation='copy', dry_run=False)
+
+    assert (tmp_path / 'no_metadata' / 'a.jpg').exists()
+    assert not (tmp_path / 'unsorted' / 'a.jpg').exists()
+
+
+def test_organize_files_extraction_failure_via_cli_style_call_path(tmp_path):
+    """Regression case: cli.py calls organize_files directly with no error
+    check of its own in front of it (unlike ui_controller.organize_one, which
+    checks 'error' in metadata before ever calling organize_files). This test
+    exercises organize_files exactly as cli.py would -- no pre-check -- to
+    prove the safety net lives inside organize_files/_destination_for itself."""
+    f1 = tmp_path / 'b.mov'
+    f1.write_bytes(b'x')
+    # Simulate exactly what metadata_extractor.extract_metadata_batch produces
+    # for a file ExifTool crashed on -- no ui_controller-level filtering here.
+    metadata_by_path = {str(f1): {
+        "error": "ExifTool crashed while extracting metadata",
+        "type": "exiftool_error",
+    }}
+
+    results = organize_files([str(f1)], tmp_path, metadata_by_path, operation='copy')
+
+    dest = tmp_path / 'no_metadata' / 'b.mov'
+    assert dest.exists()
+    assert results == [(str(f1), Placement.WROTE)]
+
+
+def test_organize_files_extraction_failure_logs_warning(tmp_path, monkeypatch):
+    """The fallback to no_metadata/ for a genuine extraction failure should not
+    be silent: it must log a warning naming the file and the underlying error."""
+    from media_organizer.app import organizer as organizer_module
+
+    warnings = []
+    monkeypatch.setattr(organizer_module.logger, 'warning', lambda msg: warnings.append(msg))
+
+    f1 = tmp_path / 'a.jpg'
+    f1.write_bytes(b'x')
+    metadata = {str(f1): {
+        "error": "ExifTool timed out extracting 1 file(s)",
+        "type": "timeout",
+    }}
+
+    organize_files([str(f1)], tmp_path, metadata, operation='copy')
+
+    assert len(warnings) == 1
+    assert str(f1) in warnings[0]
+    assert "ExifTool timed out extracting 1 file(s)" in warnings[0]

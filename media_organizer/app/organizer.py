@@ -123,6 +123,10 @@ def organize_files(files, dest_folder, metadata_by_path, operation='copy', dry_r
 
 def _destination_for(file_path, dest_folder, metadata, tag_order, use_earliest):
     """Where this file belongs: a dated folder, or a fallback bucket."""
+    if 'error' in metadata:
+        logger.warning(f"No usable metadata for {file_path}: {metadata['error']}")
+        return dest_folder / "no_metadata" / Path(file_path).name
+
     if use_earliest:
         date_str = select_earliest_datetime(metadata, tags=tag_order)
     else:
