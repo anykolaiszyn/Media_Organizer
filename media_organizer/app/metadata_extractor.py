@@ -154,9 +154,9 @@ def extract_metadata(file_path):
 
 
 def _key_matches_tag(key, tag):
-    if key == tag:
+    if key.lower() == tag.lower():
         return True
-    if ':' in key and key.rsplit(':', 1)[-1] == tag:
+    if ':' in key and key.rsplit(':', 1)[-1].lower() == tag.lower():
         return True
     return False
 

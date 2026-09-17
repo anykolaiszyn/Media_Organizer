@@ -211,6 +211,25 @@ def test_select_datetime_returns_none_when_nothing_matches():
     assert select_datetime({"EXIF:ModifyDate": "2022:01:01"}, tags=["CreateDate"]) is None
 
 
+def test_select_datetime_tag_matching_is_case_insensitive():
+    """CLI --tags accepts arbitrary user-typed casing; a lowercase request
+    must still match a mixed-case ExifTool key."""
+    metadata = {"EXIF:CreateDate": "2022:06:15 12:00:00"}
+
+    assert select_datetime(metadata, tags=["createdate"]) == "2022:06:15 12:00:00"
+
+
+def test_select_datetime_case_insensitive_match_still_rejects_endswith():
+    """Case-insensitivity must not reopen the endswith bug: a lowercase
+    request for 'createdate' must still not resolve to MediaCreateDate."""
+    metadata = {
+        "QuickTime:MediaCreateDate": "2020:01:01 00:00:00",
+        "EXIF:CreateDate": "2022:06:15 12:00:00",
+    }
+
+    assert select_datetime(metadata, tags=["createdate"]) == "2022:06:15 12:00:00"
+
+
 def test_select_earliest_datetime_does_not_double_count_an_exact_match():
     metadata = {"EXIF:CreateDate": "2022:06:15 12:00:00"}
 
