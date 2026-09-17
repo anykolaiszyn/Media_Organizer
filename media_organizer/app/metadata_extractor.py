@@ -2,6 +2,7 @@
 from pathlib import Path
 from .logger import log
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -104,10 +105,23 @@ def _extract_chunk(paths, timeout, results):
         _extract_chunk(paths[mid:], timeout, results)
         return
 
-    by_source = {entry.get("SourceFile"): entry for entry in entries}
+    # ExifTool always normalizes SourceFile to forward slashes, even when
+    # given backslash-separated Windows paths as input -- so matching by the
+    # raw strings fails for every file on Windows. normcase+normpath makes
+    # both sides comparable (a no-op on POSIX, where nothing needs fixing).
+    def _normalize(path):
+        return os.path.normcase(os.path.normpath(path))
+
+    by_source = {}
+    for entry in entries:
+        source = entry.get("SourceFile")
+        if source:
+            by_source[_normalize(source)] = entry
+
     for p in paths:
-        if p in by_source:
-            results[p] = by_source[p]
+        key = _normalize(p)
+        if key in by_source:
+            results[p] = by_source[key]
         else:
             results[p] = {"error": "ExifTool returned no entry for this file",
                           "type": "exiftool_error"}

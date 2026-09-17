@@ -43,10 +43,20 @@ class FakePopen:
 
 
 def _json_for(paths, extra=None):
-    """Build the JSON array ExifTool -j would emit for these paths."""
+    """Build the JSON array ExifTool -j would emit for these paths.
+
+    Real ExifTool always reports SourceFile with forward slashes, even when
+    given backslash-separated Windows paths as input -- so this fake
+    deliberately does the same normalization, rather than echoing the input
+    path unchanged. A fake that used the raw path (matching trivially on
+    every platform) is exactly how a real slash-mismatch bug in the
+    production matching code went undetected: see
+    test_sourcefile_matching_survives_windows_backslash_normalization below.
+    """
     extra = extra or {}
     return json.dumps([
-        {"SourceFile": p, "DateTimeOriginal": "2024:01:02 03:04:05", **extra.get(p, {})}
+        {"SourceFile": p.replace('\\', '/'), "DateTimeOriginal": "2024:01:02 03:04:05",
+         **extra.get(p, {})}
         for p in paths
     ])
 
@@ -78,16 +88,49 @@ def test_results_are_matched_by_sourcefile_not_position(monkeypatch, tmp_path):
     paths = [str(tmp_path / "a.jpg"), str(tmp_path / "b.jpg")]
 
     def fake_communicate(self, timeout=None):
-        # Deliberately return them in reverse order.
-        return _json_for(list(reversed(paths))), ""
+        # Deliberately return them in reverse order, with a distinguishing
+        # tag per file so a wrong match is actually detectable -- comparing
+        # SourceFile back to the raw input path isn't reliable, since real
+        # ExifTool normalizes separators (see the backslash test below).
+        extra = {paths[0]: {"Marker": "a"}, paths[1]: {"Marker": "b"}}
+        return _json_for(list(reversed(paths)), extra=extra), ""
 
     monkeypatch.setattr(FakePopen, "communicate", fake_communicate)
     monkeypatch.setattr("media_organizer.app.metadata_extractor.subprocess.Popen", FakePopen)
 
     result = extract_metadata_batch(paths, chunk_size=10)
 
-    assert result[paths[0]]["SourceFile"] == paths[0]
-    assert result[paths[1]]["SourceFile"] == paths[1]
+    assert "error" not in result[paths[0]] and "error" not in result[paths[1]]
+    assert result[paths[0]]["Marker"] == "a"
+    assert result[paths[1]]["Marker"] == "b"
+
+
+def test_sourcefile_matching_survives_windows_backslash_normalization(monkeypatch):
+    """Regression test: real ExifTool always reports SourceFile with forward
+    slashes, even when given backslash-separated Windows paths as input.
+    Matching results back to input paths by raw string equality silently
+    failed for every file on Windows -- see the fix in _extract_chunk's
+    normcase/normpath normalization. This test uses a hardcoded Windows-style
+    path so it's unambiguous regardless of what platform runs the suite."""
+    windows_path = r"C:\Users\alexn\Photos\PXL_20260321_201513869.mp4"
+
+    def fake_communicate(self, timeout=None):
+        # Exactly what real ExifTool does: forward slashes in SourceFile,
+        # even though the input argument used backslashes.
+        return json.dumps([{
+            "SourceFile": "C:/Users/alexn/Photos/PXL_20260321_201513869.mp4",
+            "QuickTime:CreateDate": "2026:03:21 20:15:23",
+        }]), ""
+
+    monkeypatch.setattr(FakePopen, "communicate", fake_communicate)
+    monkeypatch.setattr("media_organizer.app.metadata_extractor.subprocess.Popen", FakePopen)
+
+    result = extract_metadata_batch([windows_path], chunk_size=10)
+
+    assert "error" not in result[windows_path], (
+        f"backslash path failed to match forward-slash SourceFile: {result[windows_path]}"
+    )
+    assert result[windows_path]["QuickTime:CreateDate"] == "2026:03:21 20:15:23"
 
 
 def test_one_bad_file_is_isolated_by_bisection(monkeypatch, tmp_path):
@@ -194,7 +237,8 @@ def test_extract_metadata_single_file_uses_chunk_size_one(monkeypatch, tmp_path)
 
     result = extract_metadata(path)
 
-    assert result["SourceFile"] == path
+    assert "error" not in result, f"single-file extraction failed to match: {result}"
+    assert result["DateTimeOriginal"] == "2024:01:02 03:04:05"
 
 
 def test_select_datetime_matches_the_exact_tag_only():
