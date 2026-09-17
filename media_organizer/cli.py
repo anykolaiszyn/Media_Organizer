@@ -5,6 +5,7 @@ from media_organizer.app.exiftool_check import get_exiftool_path
 os.environ['EXIFTOOL_PATH'] = get_exiftool_path()
 
 from media_organizer.app.scanner import scan_media_files
+from media_organizer.app.metadata_extractor import extract_metadata_batch
 from media_organizer.app.organizer import organize_files
 from media_organizer.app.logger import logger
 from media_organizer.app.exiftool_check import check_exiftool
@@ -32,9 +33,11 @@ def main():
 
     files = scan_media_files(args.source)
     logger.info(f"Found {len(files)} media files.")
+    metadata_by_path = extract_metadata_batch(files)
     organize_files(
         files,
         args.dest,
+        metadata_by_path,
         operation='move' if args.move else 'copy',
         dry_run=args.dry_run,
         tag_order=args.tags
