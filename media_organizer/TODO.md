@@ -1,4 +1,4 @@
-# TODO: Media Organizer App Roadmap
+# TODO: Photo & Video Media Organizer App Roadmap
 
 **Status:** Core organize/extract/GUI pipeline was substantially rewritten and verified (unit tests, multi-agent code review, and a real EXE build/launch) — see the commit history and `docs/superpowers/` for the specs, plans, and review findings behind that pass. Items below are what's genuinely still open, not a restatement of what already shipped.
 

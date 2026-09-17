@@ -13,7 +13,7 @@ from media_organizer.app.config import SUPPORTED_FORMATS
 from media_organizer.app.utils import check_source_dest_overlap
 
 def main():
-    parser = argparse.ArgumentParser(description="Media Organizer CLI")
+    parser = argparse.ArgumentParser(description="Photo & Video Media Organizer CLI")
     parser.add_argument('--source', required=True, help='Source folder')
     parser.add_argument('--dest', required=True, help='Destination folder')
     parser.add_argument('--move', action='store_true', help='Move files instead of copying')

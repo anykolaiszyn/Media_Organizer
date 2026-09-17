@@ -1,6 +1,6 @@
-# Media Organizer
+# Photo & Video Media Organizer
 
-Media Organizer sorts a messy folder of photos and videos into a tidy
+Photo & Video Media Organizer sorts a messy folder of photos and videos into a tidy
 `YYYY/MM` structure — one folder per year, one subfolder per month — based on
 the date each file was actually taken (read from the photo/video's own
 metadata, not the file's "date modified"). It's built for anyone with a
@@ -8,14 +8,14 @@ Downloads folder, an old phone dump, or a Google Photos/Takeout export full
 of thousands of unsorted files.
 
 It never deletes or overwrites anything. If a file with the same name
-already exists at the destination, Media Organizer checks whether it's
+already exists at the destination, Photo & Video Media Organizer checks whether it's
 actually the same file — an exact duplicate is skipped, and a genuinely
 different file is kept side-by-side. That means it's safe to run more than
 once on the same folders (e.g. to "top up" after adding new photos).
 
 ## Getting the app
 
-Media Organizer runs as a single Windows program: **`media_organizer.exe`**,
+Photo & Video Media Organizer runs as a single Windows program: **`media_organizer.exe`**,
 with an `ExifTool` folder that must stay next to it (it's how the app reads
 photo/video dates — nothing else to install). If someone already handed you
 a folder containing both, skip ahead to **How to Use**.
@@ -51,7 +51,7 @@ folders, so nothing ever just disappears.
 date a photo was taken directly inside the file. Screenshots, and photos
 that have been through Facebook, Messenger, WhatsApp, or similar apps,
 often don't have that data anymore — those apps strip it before you
-download the file. That's not a bug in Media Organizer; there's no date
+download the file. That's not a bug in Photo & Video Media Organizer; there's no date
 left in the file to read.
 
 ### Other things worth knowing
@@ -65,7 +65,7 @@ left in the file to read.
 
 ## Command-Line Use (for automation)
 
-There's also a command-line version, for running Media Organizer without
+There's also a command-line version, for running Photo & Video Media Organizer without
 opening the window — for example, from a scheduled task. It currently
 requires Python (see **Running from source** below), rather than being
 built into `media_organizer.exe`:

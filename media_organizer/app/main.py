@@ -174,7 +174,7 @@ class MediaOrganizerApp:
         self.root = root
         self.controller = MediaOrganizerController()
         self.event_queue = queue.Queue()
-        root.title("Media Organizer")
+        root.title("Photo & Video Media Organizer")
         # Ensure cleanup on window close
         root.protocol("WM_DELETE_WINDOW", self.cleanup_on_exit)
 
@@ -728,7 +728,7 @@ class MediaOrganizerApp:
         win.title("About / Help")
         win.geometry("600x400")
         info = f"""
-Media Organizer v{APP_VERSION}
+Photo & Video Media Organizer v{APP_VERSION}
 
 A modular Python app to organize your photos and videos by date using ExifTool.
 
