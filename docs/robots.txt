@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://anykolaiszyn.github.io/Media_Organizer/sitemap.xml

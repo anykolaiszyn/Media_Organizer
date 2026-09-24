@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Photo & Video Media Organizer</title>
+<meta name="description" content="Organize photos and videos into folders by date. Sort a messy Downloads folder or Google Photos export into a tidy YYYY/MM structure using EXIF/metadata dates — free, never deletes, Windows app.">
+<link rel="canonical" href="https://anykolaiszyn.github.io/Media_Organizer/">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Photo & Video Media Organizer">
+<meta property="og:description" content="Organize photos and videos into folders by date. Sort a messy Downloads folder or Google Photos export into a tidy YYYY/MM structure using EXIF/metadata dates — free, never deletes, Windows app.">
+<meta property="og:url" content="https://anykolaiszyn.github.io/Media_Organizer/">
+<meta property="og:site_name" content="Photo & Video Media Organizer">
+
+<!-- Twitter -->
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Photo & Video Media Organizer">
+<meta name="twitter:description" content="Sort photos and videos into YYYY/MM folders by date taken — free, never deletes, Windows app.">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Photo & Video Media Organizer",
+  "operatingSystem": "Windows",
+  "applicationCategory": "UtilitiesApplication",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  },
+  "downloadUrl": "https://github.com/anykolaiszyn/Media_Organizer/releases/latest",
+  "license": "https://github.com/anykolaiszyn/Media_Organizer/blob/main/LICENSE"
+}
+</script>
+
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff;
+    --fg: #1a1a1a;
+    --muted: #555555;
+    --accent: #1f7a4d;
+    --accent-fg: #ffffff;
+    --border: #dddddd;
+    --card: #f6f7f9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161a;
+      --fg: #eaeaea;
+      --muted: #b0b3b8;
+      --accent: #4fd18b;
+      --accent-fg: #08150e;
+      --border: #33363c;
+      --card: #1d2025;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.55;
+    padding: 0 16px;
+  }
+  main {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 40px 0 64px;
+  }
+  h1 {
+    font-size: 1.9rem;
+    margin-bottom: 0.3em;
+  }
+  h2 {
+    font-size: 1.3rem;
+    margin-top: 2.2em;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.3em;
+  }
+  p.lede {
+    font-size: 1.1rem;
+    color: var(--muted);
+  }
+  .cta {
+    display: inline-block;
+    margin: 1.3em 0;
+    padding: 0.85em 1.6em;
+    background: var(--accent);
+    color: var(--accent-fg);
+    text-decoration: none;
+    font-weight: 600;
+    border-radius: 8px;
+    font-size: 1.05rem;
+  }
+  .cta:hover, .cta:focus { opacity: 0.9; }
+  .note {
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+  ol, ul {
+    padding-left: 1.3em;
+  }
+  li { margin-bottom: 0.5em; }
+  .faq dt {
+    font-weight: 600;
+    margin-top: 1.1em;
+  }
+  .faq dd {
+    margin: 0.3em 0 0 0;
+    color: var(--muted);
+  }
+  code {
+    background: var(--card);
+    padding: 0.15em 0.4em;
+    border-radius: 4px;
+    font-size: 0.92em;
+  }
+  footer {
+    margin-top: 3em;
+    padding-top: 1.5em;
+    border-top: 1px solid var(--border);
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Photo & Video Media Organizer</h1>
+  <p class="lede">
+    Sort a messy folder of photos and videos — a Downloads folder, an old
+    phone dump, a Google Photos/Takeout export — into a tidy
+    <code>YYYY/MM</code> structure automatically. It reads the real date
+    each file was taken from its own metadata (via ExifTool), not the file's
+    "date modified," and it never deletes or overwrites anything.
+  </p>
+
+  <a class="cta" href="https://github.com/anykolaiszyn/Media_Organizer/releases/latest">Download for Windows</a>
+  <p class="note">Free. Runs as a single Windows program, nothing else to install.</p>
+
+  <h2>How it works</h2>
+  <ol>
+    <li>Point it at a Source Folder full of unsorted photos and videos (it
+      also looks inside subfolders).</li>
+    <li>Pick a Destination Folder where the sorted <code>YYYY/MM</code>
+      structure should be built.</li>
+    <li>Choose Move or Copy, and optionally run a Dry Run first to preview
+      exactly what will happen without touching a file.</li>
+    <li>Click Organize. A progress bar shows estimated time remaining, and
+      you can cancel at any point.</li>
+    <li>Review the summary: how many files were sorted, how many duplicates
+      were skipped, and anything that needs a closer look.</li>
+  </ol>
+
+  <h2>Frequently asked questions</h2>
+  <dl class="faq">
+    <dt>Will it delete or overwrite my files?</dt>
+    <dd>No. It never deletes anything. If a file with the same name already
+      exists at the destination, it checks whether it's actually the same
+      file — an exact duplicate is skipped, and a genuinely different file is
+      kept side-by-side. That makes it safe to run more than once on the same
+      folders.</dd>
+
+    <dt>What happens to files with no date metadata?</dt>
+    <dd>A file with no date metadata at all goes into a <code>no_metadata</code>
+      folder instead of being guessed at or lost. A file with a date that's
+      present but unreadable goes into <code>unsorted</code>. Both sit next to
+      the <code>YYYY/MM</code> folders in your destination, so nothing ever
+      just disappears.</dd>
+
+    <dt>Why do some screenshots or WhatsApp/Facebook photos end up in no_metadata?</dt>
+    <dd>Most cameras and phones save the date taken directly inside the file,
+      but screenshots and photos that have passed through apps like Facebook,
+      Messenger, or WhatsApp often have that data stripped before you download
+      them. There's no date left in the file to read — that's not a bug.</dd>
+
+    <dt>What file types does it handle?</dt>
+    <dd>A broad set of common photo formats (JPG, PNG, HEIC, most camera RAW
+      formats, and more) and video formats (MP4, MOV, AVI, and more). You can
+      filter to just images, just videos, or both.</dd>
+
+    <dt>Is there a command-line version?</dt>
+    <dd>Yes, for scheduled/automated runs — it currently requires Python
+      rather than being built into the packaged .exe. See the README on
+      GitHub for the exact command.</dd>
+  </dl>
+
+  <footer>
+    <p>
+      Open source (GPL-3.0 license) on
+      <a href="https://github.com/anykolaiszyn/Media_Organizer">GitHub</a>.
+    </p>
+  </footer>
+</main>
+</body>
+</html>
